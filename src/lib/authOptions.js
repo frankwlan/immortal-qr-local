@@ -5,7 +5,7 @@ import { compare, hash } from "bcryptjs";
 import prisma from "../lib/prisma";
 
 export const authOptions = {
-  session: { strategy: "database" },
+  session: { strategy: "jwt" },
   providers: [
     // Email/Password via Credentials (MVP)
     Credentials({
