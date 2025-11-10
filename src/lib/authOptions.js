@@ -42,9 +42,16 @@ export const authOptions = {
     signIn: "/",
   },
   callbacks: {
-    async session({ session, user }) {
-      // NextAuth with database sessions provides 'user' on callback
-      if (session?.user) session.user.id = user.id;
+    async jwt({ token, user }) {
+      // On initial sign-in, add user.id to the token
+      if (user) token.id = user.id;
+      return token;
+    },
+    async session({ session, token }) {
+      // Copy the user.id from the token into the session
+      if (session?.user && token?.id) {
+        session.user.id = token.id;
+      }
       return session;
     },
   },

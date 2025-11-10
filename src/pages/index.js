@@ -9,7 +9,7 @@ export default function Home() {
   const onSubmit = async (e) => {
     e.preventDefault();
     if (mode === "login") {
-      await signIn("credentials", { email: form.email, password: form.password, callbackUrl: "/dashboard" });
+      await signIn("credentials", { email: form.email, password: form.password, callbackUrl: "/dashboard", redirect: true });
     } else {
       const res = await fetch("/api/auth/register", {
         method: "POST",
