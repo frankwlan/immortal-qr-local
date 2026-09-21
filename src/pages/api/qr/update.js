@@ -10,9 +10,10 @@ export default async function handler(req, res) {
   const { id, destination } = req.body || {};
   if (!id || !isURL(destination || "", { protocols: ["http", "https"], require_protocol: true })) return res.status(400).json({ error: "Bad input" });
 
-  const link = await prisma.qrLink.findUnique({ where: { id } });
-  if (!link || link.userId !== session.user.id) return res.status(404).end();
-
-  await prisma.qrLink.update({ where: { id }, data: { destination } });
+  const { count } = await prisma.qrLink.updateMany({
+    where: { id, userId: session.user.id, deletedAt: null },
+    data: { destination },
+  });
+  if (count === 0) return res.status(404).end();
   res.status(200).json({ ok: true });
 }

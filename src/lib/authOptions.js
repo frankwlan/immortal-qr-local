@@ -1,8 +1,13 @@
 import Credentials from "next-auth/providers/credentials";
-import GoogleProvider from "next-auth/providers/google";
-import GitHubProvider from "next-auth/providers/github";
-import { compare, hash } from "bcryptjs";
+import { compare } from "bcryptjs";
 import prisma from "../lib/prisma";
+
+// NOTE: Google/GitHub OAuth are intentionally left out for now. With JWT
+// sessions and no database adapter configured, an OAuth sign-in would never
+// create a matching User row, and the first QR-link creation after such a
+// login would fail on the QrLink.userId foreign key. Add
+// @next-auth/prisma-adapter (and re-add the providers) before enabling
+// social login.
 
 export const authOptions = {
   session: { strategy: "jwt" },
@@ -17,26 +22,13 @@ export const authOptions = {
       async authorize(credentials) {
         const { email, password } = credentials || {};
         if (!email || !password) return null;
-        const user = await prisma.user.findUnique({ where: { email } });
+        const normalizedEmail = email.trim().toLowerCase();
+        const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
         if (!user || !user.passwordHash) return null;
         const ok = await compare(password, user.passwordHash);
         return ok ? user : null;
       },
     }),
-
-    // Optional social providers (enable if env vars present)
-    ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
-      ? [GoogleProvider({
-          clientId: process.env.GOOGLE_CLIENT_ID,
-          clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-        })]
-      : []),
-    ...(process.env.GITHUB_ID && process.env.GITHUB_SECRET
-      ? [GitHubProvider({
-          clientId: process.env.GITHUB_ID,
-          clientSecret: process.env.GITHUB_SECRET,
-        })]
-      : []),
   ],
   pages: {
     signIn: "/",
@@ -54,12 +46,5 @@ export const authOptions = {
       }
       return session;
     },
-  },
-  events: {
-    // For simple email signups (register endpoint will hash & create)
-  },
-  adapter: {
-    // Minimal DB adapter using Prisma client (simplified)
-    // For MVP, rely on database session strategy and manual user create.
   },
 };

@@ -19,7 +19,8 @@ export default function Home() {
       if (res.ok) {
         await signIn("credentials", { email: form.email, password: form.password, callbackUrl: "/dashboard" });
       } else {
-        alert("Registration failed");
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || "Registration failed");
       }
     }
   };
@@ -57,13 +58,14 @@ export default function Home() {
           />
           <button type="submit" style={{ width: "100%", padding: 10 }}>{mode === "login" ? "Sign in" : "Register"}</button>
           <div style={{ marginTop: 12 }}>
-            <a onClick={() => setMode(mode === "login" ? "register" : "login")} style={{ cursor: "pointer" }}>
+            <button
+              type="button"
+              onClick={() => setMode(mode === "login" ? "register" : "login")}
+              style={{ background: "none", border: "none", padding: 0, color: "inherit", textDecoration: "underline", cursor: "pointer" }}
+            >
               {mode === "login" ? "Create account" : "Have an account? Sign in"}
-            </a>
+            </button>
           </div>
-          <hr style={{ margin: "16px 0" }} />
-          <button type="button" onClick={() => signIn("google", { callbackUrl: "/dashboard" })} style={{ width: "100%", padding: 10 }}>Sign in with Google</button>
-          <button type="button" onClick={() => signIn("github", { callbackUrl: "/dashboard" })} style={{ width: "100%", padding: 10, marginTop: 8 }}>Sign in with GitHub</button>
         </form>
       )}
     </main>

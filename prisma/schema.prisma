@@ -30,6 +30,8 @@ model QrLink {
   deletedAt   DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([userId, deletedAt])
 }
 
 // --- NextAuth models ---

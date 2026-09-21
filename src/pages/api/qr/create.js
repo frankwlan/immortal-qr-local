@@ -14,17 +14,24 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Invalid URL" });
   }
 
-  // Basic slug generation using UUID (can switch to nanoid)
-  const slug = randomUUID().slice(0, 8);
-
-  const record = await prisma.qrLink.create({
-    data: {
-      userId: session.user.id,
-      destination,
-      slug,
-    },
-    select: { id: true, slug: true, destination: true }
-  });
-
-  res.status(200).json(record);
+  const MAX_ATTEMPTS = 5;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    // Basic slug generation using UUID (can switch to nanoid)
+    const slug = randomUUID().slice(0, 8);
+    try {
+      const record = await prisma.qrLink.create({
+        data: {
+          userId: session.user.id,
+          destination,
+          slug,
+        },
+        select: { id: true, slug: true, destination: true }
+      });
+      return res.status(200).json(record);
+    } catch (err) {
+      // P2002 = unique constraint violation (slug collision) — retry with a new slug
+      if (err.code === "P2002" && attempt < MAX_ATTEMPTS - 1) continue;
+      throw err;
+    }
+  }
 }
