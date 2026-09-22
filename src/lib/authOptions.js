@@ -34,9 +34,23 @@ export const authOptions = {
     signIn: "/",
   },
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       // On initial sign-in, add user.id to the token
       if (user) token.id = user.id;
+
+      // The settings page calls useSession().update() after a successful
+      // profile save. Without this, the JWT (and therefore the session)
+      // would keep showing the old name/email until the next full login.
+      if (trigger === "update" && token.id) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: token.id },
+          select: { name: true, email: true },
+        });
+        if (dbUser) {
+          token.name = dbUser.name;
+          token.email = dbUser.email;
+        }
+      }
       return token;
     },
     async session({ session, token }) {

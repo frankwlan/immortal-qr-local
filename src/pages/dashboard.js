@@ -3,6 +3,7 @@ import { useSession } from "next-auth/react";
 import RequireAuth from "../components/RequireAuth";
 import isURL from "validator/lib/isURL";
 import QrTable from "../components/QrTable";
+import Link from "next/link";
 
 export default function Dashboard() {
   return (
@@ -49,7 +50,10 @@ function DashboardInner() {
 
   return (
     <main style={{ maxWidth: 900, margin: "2rem auto", fontFamily: "system-ui" }}>
-      <h2>Welcome, {session?.user?.email}</h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h2>Welcome, {session?.user?.name || session?.user?.email}</h2>
+        <Link href="/settings">Settings</Link>
+      </div>
       <form onSubmit={onCreate} style={{ display: "flex", gap: 8 }}>
         <input value={dest} onChange={(e) => setDest(e.target.value)} placeholder="https://destination.url" style={{ flex: 1 }} />
         <button type="submit" disabled={loading}>{loading ? "Creating..." : "Create QR"}</button>
