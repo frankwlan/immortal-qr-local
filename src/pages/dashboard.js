@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import RequireAuth from "../components/RequireAuth";
-import QRCode from "qrcode";
 import isURL from "validator/lib/isURL";
 import QrTable from "../components/QrTable";
 
@@ -43,7 +42,8 @@ function DashboardInner() {
       setDest("");
       await load();
     } else {
-      alert("Failed to create QR link.");
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || "Failed to create QR link.");
     }
   };
 

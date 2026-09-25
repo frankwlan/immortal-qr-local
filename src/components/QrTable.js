@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 
 export default function QrTable({ items, onChange }) {
@@ -8,12 +8,23 @@ export default function QrTable({ items, onChange }) {
   async function handleDelete(id) {
     if (!confirm("Delete this QR?")) return;
     const res = await fetch("/api/qr/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
-    if (res.ok) onChange(); else alert("Failed to delete");
+    if (res.ok) {
+      onChange();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || "Failed to delete");
+    }
   }
 
   async function handleUpdate(id) {
     const res = await fetch("/api/qr/update", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, destination: editUrl }) });
-    if (res.ok) { setEditing(null); onChange(); } else alert("Failed to update");
+    if (res.ok) {
+      setEditing(null);
+      onChange();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || "Failed to update");
+    }
   }
 
   return (
@@ -52,11 +63,15 @@ export default function QrTable({ items, onChange }) {
 }
 
 function Row({ it, onDelete, onEdit }) {
-  const redirectUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/api/qr/redirect/${it.slug}`;
+  const redirectUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/r/${it.slug}`;
   const [dataUrl, setDataUrl] = useState("");
 
-  useMemo(() => {
-    QRCode.toDataURL(redirectUrl).then(setDataUrl);
+  useEffect(() => {
+    let cancelled = false;
+    QRCode.toDataURL(redirectUrl)
+      .then((url) => { if (!cancelled) setDataUrl(url); })
+      .catch((err) => console.error("Failed to generate QR code:", err));
+    return () => { cancelled = true; };
   }, [redirectUrl]);
 
   return (
