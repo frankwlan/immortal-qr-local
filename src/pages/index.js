@@ -1,5 +1,6 @@
 import { signIn, signOut, useSession } from "next-auth/react";
 import { useState } from "react";
+import Link from "next/link";
 
 export default function Home() {
   const { data: session } = useSession();
@@ -66,6 +67,16 @@ export default function Home() {
               {mode === "login" ? "Create account" : "Have an account? Sign in"}
             </button>
           </div>
+          {mode === "login" ? (
+            <div style={{ marginTop: 8 }}>
+              <Link href="/forgot-password">Forgot password?</Link>
+            </div>
+          ) : (
+            <p style={{ marginTop: 8, fontSize: "0.85em", color: "#555" }}>
+              By registering, you agree to the <Link href="/terms">Terms</Link> and{" "}
+              <Link href="/privacy">Privacy Policy</Link>.
+            </p>
+          )}
         </form>
       )}
     </main>
