@@ -1,0 +1,366 @@
+From fb66a81c799d9595000abe06f14febff75ef2492 Mon Sep 17 00:00:00 2001
+From: Claude Code Review <claude-review@example.com>
+Date: Tue, 22 Sep 2026 08:37:15 +0000
+Subject: [PATCH] Add username editing and basic abuse guardrails
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- profile.js: accept a name/username change alongside email/password,
+  with the same validation pattern as the rest of that endpoint
+- authOptions: refresh the JWT from the DB when the client calls
+  session update() (used by the settings page after a save), so a
+  new name/email shows up immediately instead of on next login
+- settings.js: rewrite to actually edit name + email (prefilled from
+  the session), keep optional password change, add sign-out
+- dashboard.js: link to /settings, which was previously unreachable;
+  show the user's name when set
+- add src/lib/rateLimit.js, a small in-memory fixed-window limiter
+  (documented limitation: per-process, not shared across serverless
+  instances — fine to ship now, swap for Upstash Redis later if
+  abuse becomes real)
+- register.js: rate-limit by IP (5 / 15 min) to slow mass account
+  creation
+- qr/create.js: rate-limit by user (30 / hour) and cap active links
+  per user at 50, so one account can't be used to spray the
+  redirect endpoint with slugs
+---
+ src/lib/authOptions.js         | 16 +++++++-
+ src/lib/rateLimit.js           | 53 ++++++++++++++++++++++++
+ src/pages/api/auth/profile.js  | 15 +++++--
+ src/pages/api/auth/register.js | 13 ++++++
+ src/pages/api/qr/create.js     | 21 ++++++++++
+ src/pages/dashboard.js         |  6 ++-
+ src/pages/settings.js          | 73 +++++++++++++++++++++++++++++-----
+ 7 files changed, 183 insertions(+), 14 deletions(-)
+ create mode 100644 src/lib/rateLimit.js
+
+diff --git a/src/lib/authOptions.js b/src/lib/authOptions.js
+index f6c43c9..ef6505b 100644
+--- a/src/lib/authOptions.js
++++ b/src/lib/authOptions.js
+@@ -34,9 +34,23 @@ export const authOptions = {
+     signIn: "/",
+   },
+   callbacks: {
+-    async jwt({ token, user }) {
++    async jwt({ token, user, trigger }) {
+       // On initial sign-in, add user.id to the token
+       if (user) token.id = user.id;
++
++      // The settings page calls useSession().update() after a successful
++      // profile save. Without this, the JWT (and therefore the session)
++      // would keep showing the old name/email until the next full login.
++      if (trigger === "update" && token.id) {
++        const dbUser = await prisma.user.findUnique({
++          where: { id: token.id },
++          select: { name: true, email: true },
++        });
++        if (dbUser) {
++          token.name = dbUser.name;
++          token.email = dbUser.email;
++        }
++      }
+       return token;
+     },
+     async session({ session, token }) {
+diff --git a/src/lib/rateLimit.js b/src/lib/rateLimit.js
+new file mode 100644
+index 0000000..6e6bca7
+--- /dev/null
++++ b/src/lib/rateLimit.js
+@@ -0,0 +1,53 @@
++// Simple fixed-window rate limiter.
++//
++// NOTE: this is in-memory, so it's per server process. On a single
++// long-running server this works fine. On serverless platforms
++// (Vercel, etc.) each instance has its own memory, so a determined
++// attacker spread across instances can exceed these limits. That's
++// an acceptable tradeoff to ship something working now; if abuse
++// becomes a real problem, swap this for a shared store like
++// Upstash Redis (@upstash/ratelimit) — the call sites below don't
++// need to change, just this file's internals.
++
++const buckets = new Map();
++
++// Periodically clear old buckets so this doesn't grow forever.
++const CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
++let lastCleanup = Date.now();
++
++function cleanupIfNeeded(now) {
++  if (now - lastCleanup < CLEANUP_INTERVAL_MS) return;
++  lastCleanup = now;
++  for (const [key, bucket] of buckets) {
++    if (now - bucket.start > CLEANUP_INTERVAL_MS) buckets.delete(key);
++  }
++}
++
++/**
++ * @param {string} key - unique identifier for the caller (IP, user id, etc.)
++ * @param {{ windowMs: number, max: number }} opts
++ * @returns {{ allowed: boolean, retryAfterMs?: number }}
++ */
++export function rateLimit(key, { windowMs, max }) {
++  const now = Date.now();
++  cleanupIfNeeded(now);
++
++  const bucket = buckets.get(key);
++  if (!bucket || now - bucket.start > windowMs) {
++    buckets.set(key, { start: now, count: 1 });
++    return { allowed: true };
++  }
++  if (bucket.count >= max) {
++    return { allowed: false, retryAfterMs: windowMs - (now - bucket.start) };
++  }
++  bucket.count += 1;
++  return { allowed: true };
++}
++
++export function getClientIp(req) {
++  const forwarded = req.headers["x-forwarded-for"];
++  if (typeof forwarded === "string" && forwarded.length > 0) {
++    return forwarded.split(",")[0].trim();
++  }
++  return req.socket?.remoteAddress || "unknown";
++}
+diff --git a/src/pages/api/auth/profile.js b/src/pages/api/auth/profile.js
+index 6765647..a189609 100644
+--- a/src/pages/api/auth/profile.js
++++ b/src/pages/api/auth/profile.js
+@@ -5,15 +5,24 @@ import { hash } from "bcryptjs";
+ import isEmail from "validator/lib/isEmail";
+ 
+ const MIN_PASSWORD_LENGTH = 8;
++const MAX_NAME_LENGTH = 50;
+ 
+ export default async function handler(req, res) {
+   if (req.method !== "POST") return res.status(405).end();
+   const session = await getServerSession(req, res, authOptions);
+   if (!session?.user?.id) return res.status(401).end();
+ 
+-  const { email, password } = req.body || {};
++  const { name, email, password } = req.body || {};
+   const data = {};
+ 
++  if (name !== undefined) {
++    const trimmedName = name.trim();
++    if (trimmedName.length === 0) return res.status(400).json({ error: "Name cannot be empty" });
++    if (trimmedName.length > MAX_NAME_LENGTH) {
++      return res.status(400).json({ error: `Name must be ${MAX_NAME_LENGTH} characters or fewer` });
++    }
++    data.name = trimmedName;
++  }
+   if (email) {
+     const normalizedEmail = email.trim().toLowerCase();
+     if (!isEmail(normalizedEmail)) return res.status(400).json({ error: "Invalid email" });
+@@ -30,10 +39,10 @@ export default async function handler(req, res) {
+   }
+ 
+   try {
+-    await prisma.user.update({ where: { id: session.user.id }, data });
++    const user = await prisma.user.update({ where: { id: session.user.id }, data, select: { name: true, email: true } });
++    res.status(200).json({ ok: true, name: user.name, email: user.email });
+   } catch (err) {
+     if (err.code === "P2002") return res.status(409).json({ error: "Email already in use" });
+     throw err;
+   }
+-  res.status(200).json({ ok: true });
+ }
+\ No newline at end of file
+diff --git a/src/pages/api/auth/register.js b/src/pages/api/auth/register.js
+index 5db0715..208f591 100644
+--- a/src/pages/api/auth/register.js
++++ b/src/pages/api/auth/register.js
+@@ -1,11 +1,24 @@
+ import prisma from "../../../lib/prisma";
+ import { hash } from "bcryptjs";
+ import isEmail from "validator/lib/isEmail";
++import { rateLimit, getClientIp } from "../../../lib/rateLimit";
+ 
+ const MIN_PASSWORD_LENGTH = 8;
++const REGISTER_WINDOW_MS = 15 * 60 * 1000;
++const REGISTER_MAX_PER_WINDOW = 5;
+ 
+ export default async function handler(req, res) {
+   if (req.method !== "POST") return res.status(405).end();
++
++  const { allowed, retryAfterMs } = rateLimit(`register:${getClientIp(req)}`, {
++    windowMs: REGISTER_WINDOW_MS,
++    max: REGISTER_MAX_PER_WINDOW,
++  });
++  if (!allowed) {
++    res.setHeader("Retry-After", Math.ceil(retryAfterMs / 1000));
++    return res.status(429).json({ error: "Too many registration attempts. Try again later." });
++  }
++
+   const { email, password, name } = req.body || {};
+   if (!email || !password) return res.status(400).json({ error: "Email and password required" });
+   const normalizedEmail = email.trim().toLowerCase();
+diff --git a/src/pages/api/qr/create.js b/src/pages/api/qr/create.js
+index 896d977..e9577d7 100644
+--- a/src/pages/api/qr/create.js
++++ b/src/pages/api/qr/create.js
+@@ -3,17 +3,38 @@ import { authOptions } from "../../../lib/authOptions";
+ import prisma from "../../../lib/prisma";
+ import isURL from "validator/lib/isURL";
+ import { randomUUID } from "crypto";
++import { rateLimit } from "../../../lib/rateLimit";
++
++const CREATE_WINDOW_MS = 60 * 60 * 1000;
++const CREATE_MAX_PER_WINDOW = 30;
++const MAX_ACTIVE_LINKS_PER_USER = 50;
+ 
+ export default async function handler(req, res) {
+   if (req.method !== "POST") return res.status(405).end();
+   const session = await getServerSession(req, res, authOptions);
+   if (!session?.user?.id) return res.status(401).end();
+ 
++  const { allowed, retryAfterMs } = rateLimit(`qr-create:${session.user.id}`, {
++    windowMs: CREATE_WINDOW_MS,
++    max: CREATE_MAX_PER_WINDOW,
++  });
++  if (!allowed) {
++    res.setHeader("Retry-After", Math.ceil(retryAfterMs / 1000));
++    return res.status(429).json({ error: "Too many QR codes created recently. Try again later." });
++  }
++
+   const { destination } = req.body || {};
+   if (!isURL(destination || "", { protocols: ["http", "https"], require_protocol: true })) {
+     return res.status(400).json({ error: "Invalid URL" });
+   }
+ 
++  const activeCount = await prisma.qrLink.count({
++    where: { userId: session.user.id, deletedAt: null },
++  });
++  if (activeCount >= MAX_ACTIVE_LINKS_PER_USER) {
++    return res.status(403).json({ error: `You've reached the limit of ${MAX_ACTIVE_LINKS_PER_USER} QR codes.` });
++  }
++
+   const MAX_ATTEMPTS = 5;
+   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+     // Basic slug generation using UUID (can switch to nanoid)
+diff --git a/src/pages/dashboard.js b/src/pages/dashboard.js
+index 6246694..8ad3b64 100644
+--- a/src/pages/dashboard.js
++++ b/src/pages/dashboard.js
+@@ -3,6 +3,7 @@ import { useSession } from "next-auth/react";
+ import RequireAuth from "../components/RequireAuth";
+ import isURL from "validator/lib/isURL";
+ import QrTable from "../components/QrTable";
++import Link from "next/link";
+ 
+ export default function Dashboard() {
+   return (
+@@ -49,7 +50,10 @@ function DashboardInner() {
+ 
+   return (
+     <main style={{ maxWidth: 900, margin: "2rem auto", fontFamily: "system-ui" }}>
+-      <h2>Welcome, {session?.user?.email}</h2>
++      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
++        <h2>Welcome, {session?.user?.name || session?.user?.email}</h2>
++        <Link href="/settings">Settings</Link>
++      </div>
+       <form onSubmit={onCreate} style={{ display: "flex", gap: 8 }}>
+         <input value={dest} onChange={(e) => setDest(e.target.value)} placeholder="https://destination.url" style={{ flex: 1 }} />
+         <button type="submit" disabled={loading}>{loading ? "Creating..." : "Create QR"}</button>
+diff --git a/src/pages/settings.js b/src/pages/settings.js
+index fbdfad3..60dab1d 100644
+--- a/src/pages/settings.js
++++ b/src/pages/settings.js
+@@ -1,5 +1,7 @@
+ import RequireAuth from "../components/RequireAuth";
+-import { useState } from "react";
++import { useEffect, useState } from "react";
++import { useSession, signOut } from "next-auth/react";
++import Link from "next/link";
+ 
+ export default function Settings() {
+   return (
+@@ -10,22 +12,75 @@ export default function Settings() {
+ }
+ 
+ function SettingsInner() {
+-  const [form, setForm] = useState({ email: "", password: "" });
++  const { data: session, update } = useSession();
++  const [form, setForm] = useState({ name: "", email: "", password: "" });
++  const [saving, setSaving] = useState(false);
++
++  useEffect(() => {
++    if (session?.user) {
++      setForm((f) => ({ ...f, name: session.user.name || "", email: session.user.email || "" }));
++    }
++  }, [session?.user]);
+ 
+   const onSave = async (e) => {
+     e.preventDefault();
+-    const res = await fetch("/api/auth/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+-    alert(res.ok ? "Saved" : "Failed");
++    setSaving(true);
++    const body = { name: form.name, email: form.email };
++    if (form.password) body.password = form.password;
++
++    const res = await fetch("/api/auth/profile", {
++      method: "POST",
++      headers: { "Content-Type": "application/json" },
++      body: JSON.stringify(body),
++    });
++    setSaving(false);
++
++    if (res.ok) {
++      setForm((f) => ({ ...f, password: "" }));
++      await update();
++      alert("Saved");
++    } else {
++      const data = await res.json().catch(() => ({}));
++      alert(data.error || "Failed to save changes");
++    }
+   };
+ 
+   return (
+     <main style={{ maxWidth: 600, margin: "2rem auto", fontFamily: "system-ui" }}>
+-      <h2>Settings</h2>
++      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
++        <h2 style={{ margin: 0 }}>Settings</h2>
++        <Link href="/dashboard">Back to dashboard</Link>
++      </div>
+       <form onSubmit={onSave}>
+-        <input placeholder="New email (optional)" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} style={{ display: "block", width: "100%", marginBottom: 8 }} />
+-        <input type="password" placeholder="New password (optional)" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} style={{ display: "block", width: "100%", marginBottom: 8 }} />
+-        <button type="submit">Save</button>
++        <label style={{ display: "block", marginBottom: 4 }}>Name</label>
++        <input
++          value={form.name}
++          onChange={(e) => setForm({ ...form, name: e.target.value })}
++          style={{ display: "block", width: "100%", marginBottom: 12 }}
++        />
++
++        <label style={{ display: "block", marginBottom: 4 }}>Email</label>
++        <input
++          type="email"
++          value={form.email}
++          onChange={(e) => setForm({ ...form, email: e.target.value })}
++          style={{ display: "block", width: "100%", marginBottom: 12 }}
++        />
++
++        <label style={{ display: "block", marginBottom: 4 }}>New password (optional)</label>
++        <input
++          type="password"
++          placeholder="Leave blank to keep current password"
++          value={form.password}
++          onChange={(e) => setForm({ ...form, password: e.target.value })}
++          style={{ display: "block", width: "100%", marginBottom: 12 }}
++        />
++
++        <button type="submit" disabled={saving}>{saving ? "Saving..." : "Save changes"}</button>
+       </form>
++
++      <hr style={{ margin: "24px 0" }} />
++      <button type="button" onClick={() => signOut({ callbackUrl: "/" })}>Sign out</button>
+     </main>
+   );
+-}
+\ No newline at end of file
++}
+-- 
+2.43.0
+
