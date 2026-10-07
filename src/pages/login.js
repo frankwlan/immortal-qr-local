@@ -2,6 +2,9 @@ import { signIn, useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
+import TurnstileWidget from "../components/TurnstileWidget";
+
+const TURNSTILE_ENABLED = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
 
 export default function Login() {
   const { data: session, status } = useSession();
@@ -9,6 +12,8 @@ export default function Login() {
   const [form, setForm] = useState({ email: "", password: "", name: "" });
   const [mode, setMode] = useState("login"); // 'login' | 'register'
   const [submitting, setSubmitting] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileReset, setTurnstileReset] = useState(0);
 
   useEffect(() => {
     if (status === "authenticated") router.replace("/dashboard");
@@ -20,6 +25,10 @@ export default function Login() {
 
   const onSubmit = async (e) => {
     e.preventDefault();
+    if (mode === "register" && TURNSTILE_ENABLED && !turnstileToken) {
+      alert("Please complete the verification check first.");
+      return;
+    }
     setSubmitting(true);
     if (mode === "login") {
       await signIn("credentials", { email: form.email, password: form.password, callbackUrl: "/dashboard", redirect: true });
@@ -28,13 +37,15 @@ export default function Login() {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, turnstileToken }),
       });
       if (res.ok) {
         await signIn("credentials", { email: form.email, password: form.password, callbackUrl: "/dashboard" });
       } else {
         const data = await res.json().catch(() => ({}));
         alert(data.error || "Registration failed");
+        // Turnstile tokens are single-use, so a failed attempt needs a new one.
+        setTurnstileReset((n) => n + 1);
         setSubmitting(false);
       }
     }
@@ -95,6 +106,8 @@ export default function Login() {
               onChange={(e) => setForm({ ...form, password: e.target.value })}
             />
           </div>
+
+          {mode === "register" && <TurnstileWidget onToken={setTurnstileToken} resetSignal={turnstileReset} />}
 
           <button type="submit" className="btn btn-primary btn-full" disabled={submitting} style={{ marginTop: 8 }}>
             {submitting ? "Please wait..." : mode === "login" ? "Sign in" : "Create account"}

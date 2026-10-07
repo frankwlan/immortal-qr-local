@@ -25,3 +25,21 @@ export async function sendPasswordResetEmail(to, resetUrl) {
     `,
   });
 }
+
+export async function sendVerificationEmail(to, verifyUrl) {
+  if (!resend) {
+    console.log(`[email:dev] Email verification link for ${to}: ${verifyUrl}`);
+    return;
+  }
+
+  await resend.emails.send({
+    from: FROM,
+    to,
+    subject: "Verify your ImmortalQR email",
+    html: `
+      <p>Welcome to ImmortalQR. Please confirm this is your email address.</p>
+      <p><a href="${verifyUrl}">Verify my email</a></p>
+      <p>This link expires in 24 hours. If you didn't create an account, you can ignore this email.</p>
+    `,
+  });
+}

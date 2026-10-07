@@ -23,6 +23,8 @@ model User {
   passwordHash      String?
   resetTokenHash    String?   @unique
   resetTokenExpires DateTime?
+  verifyTokenHash    String?   @unique
+  verifyTokenExpires DateTime?
   qrLinks           QrLink[]
   accounts          Account[]
   sessions          Session[]
