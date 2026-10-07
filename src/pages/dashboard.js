@@ -3,7 +3,7 @@ import { useSession } from "next-auth/react";
 import RequireAuth from "../components/RequireAuth";
 import isURL from "validator/lib/isURL";
 import QrTable from "../components/QrTable";
-import Link from "next/link";
+import Nav from "../components/Nav";
 
 export default function Dashboard() {
   return (
@@ -49,17 +49,26 @@ function DashboardInner() {
   };
 
   return (
-    <main style={{ maxWidth: 900, margin: "2rem auto", fontFamily: "system-ui" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h2>Welcome, {session?.user?.name || session?.user?.email}</h2>
-        <Link href="/settings">Settings</Link>
-      </div>
-      <form onSubmit={onCreate} style={{ display: "flex", gap: 8 }}>
-        <input value={dest} onChange={(e) => setDest(e.target.value)} placeholder="https://destination.url" style={{ flex: 1 }} />
-        <button type="submit" disabled={loading}>{loading ? "Creating..." : "Create QR"}</button>
-      </form>
+    <main className="page">
+      <Nav userLabel={session?.user?.name || session?.user?.email} />
+      <div className="container" style={{ paddingTop: 36, paddingBottom: 48 }}>
+        <h1 style={{ fontSize: "1.8rem" }}>Your QR codes</h1>
 
-      <QrTable items={items} onChange={load} />
+        <form onSubmit={onCreate} style={{ display: "flex", gap: 10, marginBottom: 8, maxWidth: 560, flexWrap: "wrap" }}>
+          <input
+            className="input"
+            value={dest}
+            onChange={(e) => setDest(e.target.value)}
+            placeholder="https://destination.url"
+            style={{ flex: 1 }}
+          />
+          <button type="submit" className="btn btn-primary" disabled={loading}>
+            {loading ? "Creating..." : "Create QR"}
+          </button>
+        </form>
+
+        <QrTable items={items} onChange={load} />
+      </div>
     </main>
   );
 }
