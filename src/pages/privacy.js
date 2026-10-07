@@ -20,6 +20,14 @@ export default function Privacy() {
         <li>Account info: name, email address, and a hashed password (we never store your password itself)</li>
         <li>QR link data: the destination URLs you create and their generated slugs</li>
         <li>Basic server logs (e.g. IP address) used for rate-limiting and abuse prevention</li>
+        <li>
+          Scan activity: when someone scans one of your QR codes, we record
+          the time, a hashed (not plain-text) version of their IP address,
+          and their browser&apos;s user agent string, so you can see how many
+          times a code has been scanned. This applies even to people who
+          don&apos;t have an ImmortalQR account themselves, since they&apos;re
+          scanning a code someone else created.
+        </li>
       </ul>
 
       <h2>2. How we use it</h2>

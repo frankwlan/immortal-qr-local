@@ -35,6 +35,7 @@ export default function QrTable({ items, onChange }) {
             <th>QR</th>
             <th>Slug</th>
             <th>Destination</th>
+            <th>Scans</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -43,7 +44,7 @@ export default function QrTable({ items, onChange }) {
             <Row key={it.id} it={it} onDelete={handleDelete} onEdit={() => { setEditing(it.id); setEditUrl(it.destination); }} />
           ))}
           {items.length === 0 && (
-            <tr><td colSpan={4} style={{ opacity: 0.7 }}>No links yet.</td></tr>
+            <tr><td colSpan={5} style={{ opacity: 0.7 }}>No links yet.</td></tr>
           )}
         </tbody>
       </table>
@@ -79,6 +80,14 @@ function Row({ it, onDelete, onEdit }) {
       <td>{dataUrl ? <img src={dataUrl} alt="qr" width={88} height={88} /> : "..."}</td>
       <td><code>{it.slug}</code></td>
       <td style={{ maxWidth: 420, wordBreak: "break-all" }}><a href={redirectUrl} target="_blank" rel="noreferrer">{it.destination}</a></td>
+      <td>
+        <div>{it.scanCount ?? 0} scan{it.scanCount === 1 ? "" : "s"}</div>
+        {it.lastScannedAt && (
+          <div style={{ fontSize: "0.8em", opacity: 0.7 }}>
+            last {new Date(it.lastScannedAt).toLocaleDateString()}
+          </div>
+        )}
+      </td>
       <td>
         <button onClick={onEdit}>Edit</button>
         <button onClick={() => onDelete(it.id)} style={{ marginLeft: 8 }}>Delete</button>

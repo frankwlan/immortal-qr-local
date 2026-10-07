@@ -32,8 +32,25 @@ model QrLink {
   deletedAt   DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  scans       ScanEvent[]
 
   @@index([userId, deletedAt])
+}
+
+model ScanEvent {
+  id         String   @id @default(cuid())
+  qrLinkId   String
+  qrLink     QrLink   @relation(fields: [qrLinkId], references: [id])
+  scannedAt  DateTime @default(now())
+  // Hashed, not raw — people scanning a QR code aren't app users and
+  // haven't agreed to anything, so we avoid storing their IP in plain
+  // text. This isn't true anonymization (IPv4 space is small enough to
+  // be reversible by brute force), just a basic privacy floor; don't
+  // treat it as a guarantee.
+  ipHash     String?
+  userAgent  String?
+
+  @@index([qrLinkId, scannedAt])
 }
 
 // --- NextAuth models ---
