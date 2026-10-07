@@ -11,8 +11,9 @@ Local deployment process:
    ```
    cp .env.example .env
    ```
-   At minimum set `DATABASE_URL` and a strong `NEXTAUTH_SECRET`
-   (e.g. `openssl rand -base64 32`).
+   At minimum set `DATABASE_URL` (pooled), `DIRECT_URL` (direct — see
+   .env.example for where to find both in Neon's dashboard), and a
+   strong `NEXTAUTH_SECRET` (e.g. `openssl rand -base64 32`).
 
 3. Start Postgres:
    ```
