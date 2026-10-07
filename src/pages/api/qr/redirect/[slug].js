@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import prisma from "../../../../lib/prisma";
 import { logScan } from "../../../../lib/scanTracking";
 import { getClientIp } from "../../../../lib/rateLimit";
@@ -25,6 +26,7 @@ export default async function handler(req, res) {
     res.end();
   } catch (err) {
     console.error("Redirect lookup failed:", err);
+    Sentry.captureException(err);
     res.status(500).send("Something went wrong");
   }
 }

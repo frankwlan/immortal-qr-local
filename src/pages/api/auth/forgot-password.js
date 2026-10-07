@@ -2,18 +2,21 @@ import prisma from "../../../lib/prisma";
 import isEmail from "validator/lib/isEmail";
 import { generateResetToken, RESET_TOKEN_TTL_MS } from "../../../lib/passwordReset";
 import { sendPasswordResetEmail } from "../../../lib/email";
-import { rateLimit, getClientIp } from "../../../lib/rateLimit";
+import * as Sentry from "@sentry/nextjs";
+import { createLimiter, getClientIp } from "../../../lib/rateLimit";
 
 const WINDOW_MS = 15 * 60 * 1000;
 const MAX_PER_WINDOW = 5;
 
+const forgotPasswordLimiter = createLimiter("forgot-password", {
+  windowMs: WINDOW_MS,
+  max: MAX_PER_WINDOW,
+});
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const { allowed, retryAfterMs } = rateLimit(`forgot-password:${getClientIp(req)}`, {
-    windowMs: WINDOW_MS,
-    max: MAX_PER_WINDOW,
-  });
+  const { allowed, retryAfterMs } = await forgotPasswordLimiter.check(getClientIp(req));
   if (!allowed) {
     res.setHeader("Retry-After", Math.ceil(retryAfterMs / 1000));
     return res.status(429).json({ error: "Too many requests. Try again later." });
@@ -49,6 +52,7 @@ export default async function handler(req, res) {
     await sendPasswordResetEmail(normalizedEmail, resetUrl);
   } catch (err) {
     console.error("Failed to send password reset email:", err);
+    Sentry.captureException(err);
     // Don't leak email-provider failures to the caller — same generic
     // response either way, to avoid the account-enumeration issue above.
   }
