@@ -1,0 +1,103 @@
+From de329e35fbb878c55f32b0fd7cc26cdb229dd30b Mon Sep 17 00:00:00 2001
+From: Claude Code Review <claude-review@example.com>
+Date: Wed, 7 Oct 2026 09:16:27 +0000
+Subject: [PATCH] Split pooled/direct database connections for Neon on Vercel
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Serverless functions can each open their own DB connection, which
+runs into Neon's connection limit under real traffic (not an issue
+at current scale, but easy to hit once this isn't just the two of
+you). Split into:
+
+- DATABASE_URL: Neon's pooled (PgBouncer, '-pooler' host) connection,
+  used by the app at runtime via prisma/schema.prisma's directUrl
+  split
+- DIRECT_URL: Neon's direct connection, used automatically by
+  'prisma migrate deploy' (Prisma picks up directUrl on its own —
+  no command changes needed)
+
+.env.example and README updated with where to find both strings in
+Neon's dashboard. This needs a new DIRECT_URL env var added in
+Vercel before the next migration run.
+---
+ .env.example         |  9 ++++++++-
+ README.md            |  5 +++--
+ package-lock.json    |  1 +
+ prisma/schema.prisma | 11 +++++++++--
+ 4 files changed, 21 insertions(+), 5 deletions(-)
+
+diff --git a/.env.example b/.env.example
+index 3a4c22e..843eb12 100644
+--- a/.env.example
++++ b/.env.example
+@@ -3,7 +3,14 @@ NEXTAUTH_URL=http://localhost:3000
+ NEXTAUTH_SECRET=replace_with_strong_random_string
+ 
+ # DATABASE
+-DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/immortalqr?schema=public
++# In Neon's dashboard, turn on "Connection pooling" under Connect, then
++# copy both strings it gives you:
++#   DATABASE_URL -> the pooled string (hostname has a "-pooler" suffix) —
++#                    used by the app at runtime
++#   DIRECT_URL   -> the direct (non-pooled) string — used only when
++#                    running `prisma migrate deploy`
++DATABASE_URL=postgresql://USER:PASSWORD@HOST-pooler:PORT/immortalqr?schema=public&sslmode=require
++DIRECT_URL=postgresql://USER:PASSWORD@HOST:PORT/immortalqr?schema=public&sslmode=require
+ 
+ # EMAIL (used for password reset links)
+ # Sign up at https://resend.com, verify a sending domain (or use their
+diff --git a/README.md b/README.md
+index a2ebaa3..68802d1 100644
+--- a/README.md
++++ b/README.md
+@@ -11,8 +11,9 @@ Local deployment process:
+    ```
+    cp .env.example .env
+    ```
+-   At minimum set `DATABASE_URL` and a strong `NEXTAUTH_SECRET`
+-   (e.g. `openssl rand -base64 32`).
++   At minimum set `DATABASE_URL` (pooled), `DIRECT_URL` (direct — see
++   .env.example for where to find both in Neon's dashboard), and a
++   strong `NEXTAUTH_SECRET` (e.g. `openssl rand -base64 32`).
+ 
+ 3. Start Postgres:
+    ```
+diff --git a/package-lock.json b/package-lock.json
+index f8f9a68..877e0ea 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -2975,6 +2975,7 @@
+       "version": "2.3.3",
+       "resolved": "https://registry.npmjs.org/fsevents/-/fsevents-2.3.3.tgz",
+       "integrity": "sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==",
++      "dev": true,
+       "hasInstallScript": true,
+       "license": "MIT",
+       "optional": true,
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+index f56b38f..2755d0f 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -3,8 +3,15 @@ generator client {
+ }
+ 
+ datasource db {
+-  provider = "postgresql"
+-  url      = env("DATABASE_URL")
++  provider  = "postgresql"
++  // Pooled connection (Neon's PgBouncer endpoint, hostname ends in
++  // "-pooler") — used at runtime by the app, since serverless functions
++  // can each open their own connection and a direct connection limit is
++  // easy to exhaust under real traffic.
++  url       = env("DATABASE_URL")
++  // Direct (non-pooled) connection — Prisma's migrate commands need
++  // this, not the pooled one, to run schema migrations correctly.
++  directUrl = env("DIRECT_URL")
+ }
+ 
+ model User {
+-- 
+2.43.0
+
