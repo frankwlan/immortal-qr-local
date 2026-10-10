@@ -28,11 +28,10 @@ export default function QrTable({ items, onChange }) {
   }
 
   return (
-    <div style={{ marginTop: 28 }}>
-      <div style={{ overflowX: "auto" }}>
-      <table>
+    <div style={{ marginTop: 24 }}>
+      <table width="100%" cellPadding="8" style={{ borderCollapse: "collapse" }}>
         <thead>
-          <tr>
+          <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
             <th>QR</th>
             <th>Slug</th>
             <th>Destination</th>
@@ -45,21 +44,18 @@ export default function QrTable({ items, onChange }) {
             <Row key={it.id} it={it} onDelete={handleDelete} onEdit={() => { setEditing(it.id); setEditUrl(it.destination); }} />
           ))}
           {items.length === 0 && (
-            <tr><td colSpan={5} style={{ color: "var(--ink-faint)" }}>No links yet. Create your first one above.</td></tr>
+            <tr><td colSpan={5} style={{ opacity: 0.7 }}>No links yet.</td></tr>
           )}
         </tbody>
       </table>
-      </div>
 
       {editing && (
-        <div className="panel" style={{ marginTop: 20, maxWidth: 480 }}>
-          <h3 style={{ fontSize: "1rem", fontFamily: "var(--font-body)", marginBottom: 12 }}>Edit destination</h3>
-          <div className="field">
-            <input className="input" value={editUrl} onChange={(e) => setEditUrl(e.target.value)} />
-          </div>
+        <div style={{ marginTop: 16, border: "1px solid #ddd", padding: 12 }}>
+          <h4>Edit destination</h4>
+          <input value={editUrl} onChange={(e) => setEditUrl(e.target.value)} style={{ width: "100%", marginBottom: 8 }} />
           <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn btn-primary btn-sm" onClick={() => handleUpdate(editing)}>Save</button>
-            <button className="btn btn-outline btn-sm" onClick={() => setEditing(null)}>Cancel</button>
+            <button onClick={() => handleUpdate(editing)}>Save</button>
+            <button onClick={() => setEditing(null)}>Cancel</button>
           </div>
         </div>
       )}
@@ -80,25 +76,21 @@ function Row({ it, onDelete, onEdit }) {
   }, [redirectUrl]);
 
   return (
-    <tr>
-      <td>{dataUrl ? <img src={dataUrl} alt="qr" width={72} height={72} /> : "..."}</td>
+    <tr style={{ borderBottom: "1px solid #eee" }}>
+      <td>{dataUrl ? <img src={dataUrl} alt="qr" width={88} height={88} /> : "..."}</td>
       <td><code>{it.slug}</code></td>
-      <td style={{ maxWidth: 380, wordBreak: "break-all" }}>
-        <a href={redirectUrl} target="_blank" rel="noreferrer">{it.destination}</a>
-      </td>
+      <td style={{ maxWidth: 420, wordBreak: "break-all" }}><a href={redirectUrl} target="_blank" rel="noreferrer">{it.destination}</a></td>
       <td>
         <div>{it.scanCount ?? 0} scan{it.scanCount === 1 ? "" : "s"}</div>
         {it.lastScannedAt && (
-          <div style={{ fontSize: "0.8em", color: "var(--ink-faint)" }}>
+          <div style={{ fontSize: "0.8em", opacity: 0.7 }}>
             last {new Date(it.lastScannedAt).toLocaleDateString()}
           </div>
         )}
       </td>
       <td>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn btn-outline btn-sm" onClick={onEdit}>Edit</button>
-          <button className="btn btn-danger btn-sm" onClick={() => onDelete(it.id)}>Delete</button>
-        </div>
+        <button onClick={onEdit}>Edit</button>
+        <button onClick={() => onDelete(it.id)} style={{ marginLeft: 8 }}>Delete</button>
       </td>
     </tr>
   );

@@ -1,97 +1,84 @@
-import { useSession } from "next-auth/react";
+import { signIn, signOut, useSession } from "next-auth/react";
+import { useState } from "react";
 import Link from "next/link";
-import QrGridArt from "../components/QrGridArt";
-
-const FEATURES = [
-  {
-    title: "Redirect anytime",
-    body: "Change where a code points whenever you need to. The code printed in the world never has to change.",
-  },
-  {
-    title: "See who's scanning",
-    body: "Every scan is timestamped, so you know a code is working before you find out the hard way.",
-  },
-  {
-    title: "One dashboard, every code",
-    body: "Create, edit, and retire QR codes from one place, instead of a shared spreadsheet nobody trusts.",
-  },
-];
 
 export default function Home() {
   const { data: session } = useSession();
+  const [form, setForm] = useState({ email: "", password: "", name: "" });
+  const [mode, setMode] = useState("login"); // 'login' | 'register'
+
+  const onSubmit = async (e) => {
+    e.preventDefault();
+    if (mode === "login") {
+      await signIn("credentials", { email: form.email, password: form.password, callbackUrl: "/dashboard", redirect: true });
+    } else {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      if (res.ok) {
+        await signIn("credentials", { email: form.email, password: form.password, callbackUrl: "/dashboard" });
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || "Registration failed");
+      }
+    }
+  };
 
   return (
-    <main className="page">
-      <header className="site-header">
-        <div className="container site-header-inner">
-          <span className="wordmark">ImmortalQR</span>
-          {session ? (
-            <Link href="/dashboard" className="btn btn-outline">
-              Go to dashboard
-            </Link>
-          ) : (
-            <Link href="/login" className="btn-text">
-              Sign in
-            </Link>
+    <main style={{ maxWidth: 420, margin: "3rem auto", fontFamily: "system-ui" }}>
+      <h1>ImmortalQR</h1>
+      {session ? (
+        <>
+          <p>Signed in as {session.user?.email}</p>
+          <button onClick={() => signOut({ callbackUrl: "/" })}>Sign out</button>
+        </>
+      ) : (
+        <form onSubmit={onSubmit}>
+          {mode === "register" && (
+            <input
+              placeholder="Name"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              style={{ display: "block", width: "100%", marginBottom: 8 }}
+            />
           )}
-        </div>
-      </header>
-
-      <section className="hero">
-        <div className="container hero-grid">
-          <div className="hero-copy">
-            <h1>Print once. Redirect forever.</h1>
-            <p style={{ fontSize: "1.1rem" }}>
-              ImmortalQR gives you a QR code whose destination you control.
-              Change where it points anytime — without reprinting a single
-              poster, label, or business card.
-            </p>
-            <div className="hero-actions">
-              {session ? (
-                <Link href="/dashboard" className="btn btn-primary">
-                  Go to dashboard
-                </Link>
-              ) : (
-                <>
-                  <Link href="/login?mode=register" className="btn btn-primary">
-                    Get started
-                  </Link>
-                  <Link href="/login" className="btn btn-outline">
-                    Sign in
-                  </Link>
-                </>
-              )}
+          <input
+            placeholder="Email"
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+            style={{ display: "block", width: "100%", marginBottom: 8 }}
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={form.password}
+            onChange={(e) => setForm({ ...form, password: e.target.value })}
+            style={{ display: "block", width: "100%", marginBottom: 8 }}
+          />
+          <button type="submit" style={{ width: "100%", padding: 10 }}>{mode === "login" ? "Sign in" : "Register"}</button>
+          <div style={{ marginTop: 12 }}>
+            <button
+              type="button"
+              onClick={() => setMode(mode === "login" ? "register" : "login")}
+              style={{ background: "none", border: "none", padding: 0, color: "inherit", textDecoration: "underline", cursor: "pointer" }}
+            >
+              {mode === "login" ? "Create account" : "Have an account? Sign in"}
+            </button>
+          </div>
+          {mode === "login" ? (
+            <div style={{ marginTop: 8 }}>
+              <Link href="/forgot-password">Forgot password?</Link>
             </div>
-          </div>
-          <div className="hero-art" aria-hidden="true">
-            <QrGridArt size={300} />
-          </div>
-        </div>
-      </section>
-
-      <section className="features">
-        <div className="container">
-          <h2>Why ImmortalQR</h2>
-          <div className="features-grid">
-            {FEATURES.map((f) => (
-              <div className="feature" key={f.title}>
-                <h3>{f.title}</h3>
-                <p>{f.body}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <footer className="site-footer">
-        <div className="container site-footer-inner">
-          <span>&copy; {new Date().getFullYear()} ImmortalQR</span>
-          <div className="site-footer-links">
-            <Link href="/terms">Terms</Link>
-            <Link href="/privacy">Privacy</Link>
-          </div>
-        </div>
-      </footer>
+          ) : (
+            <p style={{ marginTop: 8, fontSize: "0.85em", color: "#555" }}>
+              By registering, you agree to the <Link href="/terms">Terms</Link> and{" "}
+              <Link href="/privacy">Privacy Policy</Link>.
+            </p>
+          )}
+        </form>
+      )}
     </main>
   );
 }

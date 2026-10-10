@@ -1,362 +1,122 @@
-/* ImmortalQR design tokens.
-   Concept: ink-on-paper permanence — the code is printed once, the
-   destination can change forever. Paper white + near-black ink, with a
-   single antique-brass accent reserved for dividers, focus states, and
-   the hero graphic (kept out of button text to protect contrast). */
+/* src/styles/globals.css — Diablo 4 Theme */
+
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&display=swap');
 
 :root {
-  --paper: #f6f7f5;
-  --paper-raised: #ffffff;
-  --ink: #15181c;
-  --ink-soft: #4a4f57;
-  --ink-faint: #676b72; /* darkened from an earlier #8a8f97 to clear 4.5:1 on --paper for small text */
-  --brass: #b8862b;
-  --brass-soft: #e4c98a;
-  --line: #dddfda;
-  --danger: #a4342f;
-
-  --font-display: "Fraunces", Georgia, "Times New Roman", serif;
-  --font-body: "Work Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-
-  --radius: 4px;
-  --container-width: 1040px;
+  --background: #0d0d0d;
+  --foreground: #f5f5f5;
+  --accent: #c41e3a; /* blood red */
+  --accent-dark: #7a0e20;
+  --card-bg: #1a1a1a;
+  --border: #2b2b2b;
+  --font-main: 'Cinzel', serif;
 }
 
-* {
-  box-sizing: border-box;
-}
-
-html,
-body {
+html, body {
   margin: 0;
   padding: 0;
-  background: var(--paper);
-  color: var(--ink);
-  font-family: var(--font-body);
-  font-size: 16px;
-  line-height: 1.5;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-main);
+  letter-spacing: 0.5px;
   min-height: 100%;
 }
 
-h1,
-h2,
-h3 {
-  font-family: var(--font-display);
-  font-weight: 600;
-  line-height: 1.15;
-  margin: 0 0 0.5em;
-  color: var(--ink);
-}
-
-h1 {
-  font-size: clamp(2.2rem, 4vw, 3.4rem);
-}
-
-h2 {
-  font-size: clamp(1.5rem, 2.4vw, 2rem);
-}
-
-p {
-  margin: 0 0 1em;
-  max-width: 62ch;
-  color: var(--ink-soft);
-}
-
 a {
-  color: var(--ink);
-  text-decoration-color: var(--brass);
-  text-decoration-thickness: 1.5px;
-  text-underline-offset: 3px;
+  color: var(--accent);
+  text-decoration: none;
 }
 
 a:hover {
-  color: var(--ink);
-  text-decoration-color: var(--ink);
+  color: var(--accent-dark);
+  text-shadow: 0 0 6px var(--accent);
 }
 
-code {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  background: var(--paper-raised);
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  padding: 1px 5px;
-  font-size: 0.9em;
-}
-
-/* Focus states — visible everywhere, never suppressed */
-a:focus-visible,
-button:focus-visible,
-input:focus-visible,
-[tabindex]:focus-visible {
-  outline: 2px solid var(--brass);
-  outline-offset: 2px;
-}
-
-/* Layout */
-.container {
-  max-width: var(--container-width);
-  margin: 0 auto;
-  padding: 0 24px;
-}
-
-.page {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-
-.hairline {
+button {
+  background: var(--accent);
   border: none;
-  border-top: 1px solid var(--line);
-  margin: 0;
-}
-
-/* Buttons — ink-filled primary (stamped look), outlined secondary.
-   Brass is never used as button text color, to keep contrast safe. */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  font-family: var(--font-body);
-  font-size: 0.95rem;
-  font-weight: 600;
-  padding: 11px 22px;
-  border-radius: var(--radius);
-  border: 1.5px solid var(--ink);
+  color: var(--foreground);
+  padding: 10px 16px;
   cursor: pointer;
-  transition: transform 0.15s ease, opacity 0.15s ease;
-  text-decoration: none;
-  line-height: 1;
+  font-family: var(--font-main);
+  transition: background 0.3s ease, transform 0.2s ease;
+  text-transform: uppercase;
 }
 
-.btn:active {
-  transform: translateY(1px);
+button:hover {
+  background: var(--accent-dark);
+  transform: scale(1.05);
 }
 
-.btn-primary {
-  background: var(--ink);
-  color: var(--paper);
+input, textarea {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  color: var(--foreground);
+  padding: 8px;
+  font-family: var(--font-main);
 }
 
-.btn-primary:hover {
-  opacity: 0.88;
+h1, h2, h3, h4 {
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
-.btn-outline {
-  background: transparent;
-  color: var(--ink);
-}
-
-.btn-outline:hover {
-  background: var(--paper-raised);
-}
-
-.btn-text {
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--ink);
-  text-decoration: underline;
-  text-decoration-color: var(--brass);
-  text-underline-offset: 3px;
-  cursor: pointer;
-  font: inherit;
-  font-weight: 600;
-}
-
-.btn-full {
-  width: 100%;
-}
-
-.btn-sm {
-  padding: 6px 14px;
-  font-size: 0.85rem;
-}
-
-.btn-danger {
-  border-color: var(--danger);
-  color: var(--danger);
-}
-
-.btn-danger:hover {
-  background: var(--danger);
-  color: var(--paper);
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Form fields */
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 14px;
-}
-
-.field label {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--ink-soft);
-}
-
-.input {
-  font-family: var(--font-body);
-  font-size: 1rem;
-  padding: 10px 12px;
-  border: 1.5px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--paper-raised);
-  color: var(--ink);
-  width: 100%;
-}
-
-.input:focus {
-  outline: none;
-  border-color: var(--ink);
-}
-
-/* Cards used sparingly — flat, hairline-bordered, no shadow kit */
-.panel {
-  background: var(--paper-raised);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+main, section, form {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  box-shadow: 0 0 15px rgba(196, 30, 58, 0.2);
   padding: 24px;
+  border-radius: 8px;
 }
 
-/* Table */
 table {
   border-collapse: collapse;
   width: 100%;
+  background: var(--card-bg);
 }
 
-th {
-  text-align: left;
-  font-family: var(--font-body);
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--ink-soft);
-  padding: 10px 8px;
-  border-bottom: 1.5px solid var(--ink);
+th, td {
+  border-bottom: 1px solid var(--border);
+  padding: 12px;
 }
 
-td {
-  padding: 12px 8px;
-  border-bottom: 1px solid var(--line);
-  vertical-align: middle;
+tr:hover {
+  background: rgba(196, 30, 58, 0.05);
 }
 
-tr:hover td {
-  background: var(--paper-raised);
+hr {
+  border: none;
+  border-top: 1px solid var(--border);
 }
 
-/* Landing page */
-.site-header {
-  border-bottom: 1px solid var(--line);
+/* Glow effect for Diablo 4 style */
+.shadow-glow {
+  text-shadow: 0 0 8px var(--accent), 0 0 12px var(--accent-dark);
 }
 
-.site-header-inner {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 20px 0;
+/* Buttons styled as runes */
+.btn-rune {
+  background: linear-gradient(145deg, var(--accent), var(--accent-dark));
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-weight: bold;
+  box-shadow: inset 0 0 6px rgba(0,0,0,0.6);
 }
 
-.wordmark {
-  font-family: var(--font-display);
-  font-size: 1.3rem;
-  font-weight: 600;
-  text-decoration: none;
-  color: var(--ink);
+.btn-rune:hover {
+  box-shadow: 0 0 10px var(--accent-dark);
+  transform: translateY(-1px);
 }
 
-.hero {
-  padding: 72px 0 88px;
+/* Make scrollbars dark */
+::-webkit-scrollbar {
+  width: 8px;
+  background: var(--background);
 }
-
-.hero-grid {
-  display: flex;
-  align-items: center;
-  gap: 56px;
+::-webkit-scrollbar-thumb {
+  background: var(--accent-dark);
 }
-
-.hero-copy {
-  flex: 1 1 480px;
-}
-
-.hero-art {
-  flex: 0 0 auto;
-  margin-left: auto;
-}
-
-.hero-actions {
-  display: flex;
-  gap: 14px;
-  margin-top: 28px;
-  flex-wrap: wrap;
-}
-
-.features {
-  padding: 56px 0 80px;
-  border-top: 1px solid var(--line);
-}
-
-.features-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 40px;
-  margin-top: 36px;
-}
-
-.feature h3 {
-  font-size: 1.1rem;
-  font-family: var(--font-body);
-  font-weight: 600;
-  border-top: 2px solid var(--brass);
-  padding-top: 14px;
-}
-
-.site-footer {
-  margin-top: auto;
-  border-top: 1px solid var(--line);
-  padding: 28px 0;
-}
-
-.site-footer-inner {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  font-size: 0.85rem;
-  color: var(--ink-faint);
-}
-
-.site-footer-links {
-  display: flex;
-  gap: 18px;
-}
-
-@media (max-width: 760px) {
-  .hero-grid {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  .hero-art {
-    margin-left: 0;
-  }
-  .features-grid {
-    grid-template-columns: 1fr;
-    gap: 32px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  * {
-    animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
-  }
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
 }

@@ -24,34 +24,28 @@ export default function ForgotPassword() {
   };
 
   return (
-    <main className="page" style={{ justifyContent: "center" }}>
-      <div className="container" style={{ maxWidth: 400 }}>
-        <h1 style={{ fontSize: "1.6rem" }}>Reset your password</h1>
-        {submitted ? (
-          <p>If that email is registered, a reset link has been sent. Check your inbox.</p>
-        ) : (
-          <form onSubmit={onSubmit}>
-            <div className="field">
-              <label htmlFor="email">Email</label>
-              <input
-                id="email"
-                type="email"
-                required
-                className="input"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-            <button type="submit" className="btn btn-primary btn-full" disabled={loading}>
-              {loading ? "Sending..." : "Send reset link"}
-            </button>
-          </form>
-        )}
-        <p style={{ marginTop: 16 }}>
-          <Link href="/login">Back to sign in</Link>
-        </p>
-      </div>
+    <main style={{ maxWidth: 400, margin: "4rem auto", fontFamily: "system-ui" }}>
+      <h2>Reset your password</h2>
+      {submitted ? (
+        <p>If that email is registered, a reset link has been sent. Check your inbox.</p>
+      ) : (
+        <form onSubmit={onSubmit}>
+          <input
+            type="email"
+            required
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            style={{ display: "block", width: "100%", marginBottom: 8 }}
+          />
+          <button type="submit" disabled={loading} style={{ width: "100%", padding: 10 }}>
+            {loading ? "Sending..." : "Send reset link"}
+          </button>
+        </form>
+      )}
+      <p style={{ marginTop: 16 }}>
+        <Link href="/">Back to sign in</Link>
+      </p>
     </main>
   );
 }

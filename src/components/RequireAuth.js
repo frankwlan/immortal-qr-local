@@ -6,12 +6,6 @@ export default function RequireAuth({ children }) {
   useEffect(() => {
     if (status === "unauthenticated") signIn();
   }, [status]);
-  if (status !== "authenticated") {
-    return (
-      <main className="page" style={{ justifyContent: "center", alignItems: "center" }}>
-        <p style={{ color: "var(--ink-faint)" }}>Loading…</p>
-      </main>
-    );
-  }
+  if (status !== "authenticated") return <p style={{ padding: 24 }}>Loading…</p>;
   return children;
 }
