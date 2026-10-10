@@ -2,9 +2,10 @@ import Link from "next/link";
 
 export default function Privacy() {
   return (
-    <main style={{ maxWidth: 700, margin: "3rem auto", fontFamily: "system-ui", lineHeight: 1.6 }}>
+    <main className="page" style={{ paddingTop: 36, paddingBottom: 48 }}>
+      <div className="container" style={{ maxWidth: 700 }}>
       <p><Link href="/">&larr; Back</Link></p>
-      <h1>Privacy Policy</h1>
+      <h1 style={{ fontSize: "1.8rem" }}>Privacy Policy</h1>
       <p><em>Last updated: {new Date().toISOString().slice(0, 10)}</em></p>
 
       <p>
@@ -57,6 +58,7 @@ export default function Privacy() {
 
       <h2>6. Contact</h2>
       <p>Questions about this policy? Reach out to the site owner directly.</p>
+      </div>
     </main>
   );
 }
