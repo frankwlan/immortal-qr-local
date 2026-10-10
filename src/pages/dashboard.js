@@ -17,6 +17,7 @@ export default function Dashboard() {
 function DashboardInner() {
   const { data: session } = useSession();
   const [dest, setDest] = useState("");
+  const [slug, setSlug] = useState("");
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -37,11 +38,12 @@ function DashboardInner() {
     const res = await fetch("/api/qr/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ destination: dest })
+      body: JSON.stringify({ destination: dest, slug: slug.trim() || undefined })
     });
     setLoading(false);
     if (res.ok) {
       setDest("");
+      setSlug("");
       await load();
     } else {
       const data = await res.json().catch(() => ({}));
@@ -64,10 +66,26 @@ function DashboardInner() {
             placeholder="https://destination.url"
             style={{ flex: 1 }}
           />
+          <input
+            className="input"
+            value={slug}
+            onChange={(e) => setSlug(e.target.value.toLowerCase())}
+            placeholder="Custom address (optional), e.g. summer-menu"
+            maxLength={40}
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            style={{ flex: "1 1 100%" }}
+          />
           <button type="submit" className="btn btn-primary" disabled={loading}>
             {loading ? "Creating..." : "Create QR"}
           </button>
         </form>
+        <p style={{ fontSize: "0.85rem", marginBottom: 24, color: "var(--ink-soft)" }}>
+          {slug.trim()
+            ? <>Your link: <code>/r/{slug.trim()}</code></>
+            : "Leave the address blank and we'll generate one. Custom addresses can't be changed later."}
+        </p>
 
         <QrTable items={items} onChange={load} />
       </div>

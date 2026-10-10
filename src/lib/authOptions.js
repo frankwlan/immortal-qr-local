@@ -44,7 +44,11 @@ export const authOptions = {
       // The settings page calls useSession().update() after a successful
       // profile save. Without this, the JWT (and therefore the session)
       // would keep showing the old name/email until the next full login.
-      if (trigger === "update" && token.id) {
+      // Also re-check whenever the token still says "unverified": a user can
+      // verify in another tab/browser, or a client-side refresh can no-op,
+      // and this lets the stale JWT heal itself on the next session fetch.
+      // Only unverified users pay for the extra query.
+      if (token.id && (trigger === "update" || !token.emailVerified)) {
         const dbUser = await prisma.user.findUnique({
           where: { id: token.id },
           select: { name: true, email: true, emailVerified: true },
