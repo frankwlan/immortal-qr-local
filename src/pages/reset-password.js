@@ -32,35 +32,43 @@ export default function ResetPassword() {
   };
 
   return (
-    <main style={{ maxWidth: 400, margin: "4rem auto", fontFamily: "system-ui" }}>
-      <h2>Choose a new password</h2>
-      {done ? (
-        <p>
-          Your password has been reset. <Link href="/">Sign in</Link>
-        </p>
-      ) : (
-        <form onSubmit={onSubmit}>
-          <input
-            type="password"
-            required
-            placeholder="New password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            style={{ display: "block", width: "100%", marginBottom: 8 }}
-          />
-          <input
-            type="password"
-            required
-            placeholder="Confirm new password"
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            style={{ display: "block", width: "100%", marginBottom: 8 }}
-          />
-          <button type="submit" disabled={loading || !token} style={{ width: "100%", padding: 10 }}>
-            {loading ? "Saving..." : "Reset password"}
-          </button>
-        </form>
-      )}
+    <main className="page" style={{ justifyContent: "center" }}>
+      <div className="container" style={{ maxWidth: 400 }}>
+        <h1 style={{ fontSize: "1.6rem" }}>Choose a new password</h1>
+        {done ? (
+          <p>
+            Your password has been reset. <Link href="/login">Sign in</Link>
+          </p>
+        ) : (
+          <form onSubmit={onSubmit}>
+            <div className="field">
+              <label htmlFor="password">New password</label>
+              <input
+                id="password"
+                type="password"
+                required
+                className="input"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="confirm">Confirm new password</label>
+              <input
+                id="confirm"
+                type="password"
+                required
+                className="input"
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+              />
+            </div>
+            <button type="submit" className="btn btn-primary btn-full" disabled={loading || !token}>
+              {loading ? "Saving..." : "Reset password"}
+            </button>
+          </form>
+        )}
+      </div>
     </main>
   );
 }
