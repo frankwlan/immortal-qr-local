@@ -35,8 +35,11 @@ export const authOptions = {
   },
   callbacks: {
     async jwt({ token, user, trigger }) {
-      // On initial sign-in, add user.id to the token
-      if (user) token.id = user.id;
+      // On initial sign-in, add user.id (and verified status) to the token
+      if (user) {
+        token.id = user.id;
+        token.emailVerified = Boolean(user.emailVerified);
+      }
 
       // The settings page calls useSession().update() after a successful
       // profile save. Without this, the JWT (and therefore the session)
@@ -44,11 +47,12 @@ export const authOptions = {
       if (trigger === "update" && token.id) {
         const dbUser = await prisma.user.findUnique({
           where: { id: token.id },
-          select: { name: true, email: true },
+          select: { name: true, email: true, emailVerified: true },
         });
         if (dbUser) {
           token.name = dbUser.name;
           token.email = dbUser.email;
+          token.emailVerified = Boolean(dbUser.emailVerified);
         }
       }
       return token;
@@ -57,6 +61,7 @@ export const authOptions = {
       // Copy the user.id from the token into the session
       if (session?.user && token?.id) {
         session.user.id = token.id;
+        session.user.emailVerified = Boolean(token.emailVerified);
       }
       return session;
     },

@@ -40,11 +40,16 @@ export default function Privacy() {
 
       <h2>3. Third-party services</h2>
       <p>
-        We use a database host to store account and link data, and an
-        email provider (Resend) to send password reset emails. These
-        providers process data on our behalf and have their own privacy
-        practices.
+        We use the following services to run ImmortalQR. They process data
+        on our behalf and have their own privacy practices.
       </p>
+      <ul>
+        <li>A database host, to store account and link data</li>
+        <li>Resend, to send account emails such as email verification and password resets</li>
+        <li>Upstash, to enforce rate limits; this involves temporarily storing IP addresses</li>
+        <li>Sentry, to report errors; error reports can include technical details such as your browser, the page you were on, and your IP address</li>
+        <li>Cloudflare Turnstile, to check that sign-ups come from real people rather than bots</li>
+      </ul>
 
       <h2>4. Data retention</h2>
       <p>
