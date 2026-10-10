@@ -1,0 +1,749 @@
+From b3faabe9478175ff01550c5e586b64216ec4edfa Mon Sep 17 00:00:00 2001
+From: Claude Code Review <claude-review@example.com>
+Date: Wed, 7 Oct 2026 21:45:34 +0000
+Subject: [PATCH] Add email verification and Cloudflare Turnstile bot
+ protection
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Email verification:
+- User gets verifyTokenHash/verifyTokenExpires (hashed, 24h, single-use,
+  same approach as password reset); migration included. The existing
+  emailVerified column is finally used.
+- register sends a verification email (best effort — a failed send
+  doesn't undo the signup; Sentry is notified)
+- /verify-email page + POST /api/auth/verify-email consume the token
+- POST /api/auth/resend-verification (signed in, 3/hour) for lost
+  emails; dashboard shows a banner with a resend button until verified
+- changing your email in Settings resets verified status and sends a
+  link to the NEW address; re-saving the same email does not
+- emailVerified is carried in the JWT/session, refreshed on update()
+- Not enforced: unverified users can still create links. Gating link
+  creation on verification is a one-line check in qr/create if wanted.
+
+Bot protection:
+- Cloudflare Turnstile on the register form (TurnstileWidget, explicit
+  rendering so it works when toggling between sign in / register)
+- server verifies the token before any database work, after cheap
+  input validation so a typo doesn't burn the single-use token
+- skipped when TURNSTILE_SECRET_KEY / site key aren't set; once set it
+  fails closed (missing, rejected, unreachable, or >5s all reject)
+
+Privacy policy now lists Resend, Upstash, Sentry, and Cloudflare
+Turnstile and what each receives.
+
+Depends on the landing-page patch (login.js, restyled dashboard) and
+the Upstash/Sentry patch (createLimiter, Sentry).
+---
+ .env.example                                  |  7 ++
+ .../migration.sql                             |  6 ++
+ prisma/schema.prisma                          |  2 +
+ src/components/TurnstileWidget.js             | 60 +++++++++++++++
+ src/components/VerifyEmailBanner.js           | 39 ++++++++++
+ src/lib/authOptions.js                        | 11 ++-
+ src/lib/email.js                              | 18 +++++
+ src/lib/emailVerification.js                  | 14 ++++
+ src/lib/turnstile.js                          | 35 +++++++++
+ src/pages/api/auth/profile.js                 | 30 +++++++-
+ src/pages/api/auth/register.js                | 42 ++++++++++-
+ src/pages/api/auth/resend-verification.js     | 47 ++++++++++++
+ src/pages/api/auth/verify-email.js            | 23 ++++++
+ src/pages/dashboard.js                        |  2 +
+ src/pages/login.js                            | 15 +++-
+ src/pages/privacy.js                          | 13 +++-
+ src/pages/verify-email.js                     | 73 +++++++++++++++++++
+ 17 files changed, 424 insertions(+), 13 deletions(-)
+ create mode 100644 prisma/migrations/20261007000000_add_email_verification_token/migration.sql
+ create mode 100644 src/components/TurnstileWidget.js
+ create mode 100644 src/components/VerifyEmailBanner.js
+ create mode 100644 src/lib/emailVerification.js
+ create mode 100644 src/lib/turnstile.js
+ create mode 100644 src/pages/api/auth/resend-verification.js
+ create mode 100644 src/pages/api/auth/verify-email.js
+ create mode 100644 src/pages/verify-email.js
+
+diff --git a/.env.example b/.env.example
+index d82ead1..9ec8ca3 100644
+--- a/.env.example
++++ b/.env.example
+@@ -37,6 +37,13 @@ SENTRY_ORG=
+ SENTRY_PROJECT=
+ SENTRY_AUTH_TOKEN=
+ 
++# BOT PROTECTION (optional locally, recommended in production)
++# Cloudflare Turnstile on the sign-up form. Create a free widget at
++# https://dash.cloudflare.com (Turnstile section) and copy both keys. If
++# either is missing, the check is skipped entirely.
++NEXT_PUBLIC_TURNSTILE_SITE_KEY=
++TURNSTILE_SECRET_KEY=
++
+ # NextAuth OAuth is not wired up yet (see src/lib/authOptions.js). Leave unset for now.
+ # GOOGLE_CLIENT_ID=
+ # GOOGLE_CLIENT_SECRET=
+diff --git a/prisma/migrations/20261007000000_add_email_verification_token/migration.sql b/prisma/migrations/20261007000000_add_email_verification_token/migration.sql
+new file mode 100644
+index 0000000..01764b4
+--- /dev/null
++++ b/prisma/migrations/20261007000000_add_email_verification_token/migration.sql
+@@ -0,0 +1,6 @@
++-- AlterTable
++ALTER TABLE "User" ADD COLUMN "verifyTokenHash" TEXT;
++ALTER TABLE "User" ADD COLUMN "verifyTokenExpires" TIMESTAMP(3);
++
++-- CreateIndex
++CREATE UNIQUE INDEX "User_verifyTokenHash_key" ON "User"("verifyTokenHash");
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+index 2755d0f..35957b7 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -23,6 +23,8 @@ model User {
+   passwordHash      String?
+   resetTokenHash    String?   @unique
+   resetTokenExpires DateTime?
++  verifyTokenHash    String?   @unique
++  verifyTokenExpires DateTime?
+   qrLinks           QrLink[]
+   accounts          Account[]
+   sessions          Session[]
+diff --git a/src/components/TurnstileWidget.js b/src/components/TurnstileWidget.js
+new file mode 100644
+index 0000000..4537f38
+--- /dev/null
++++ b/src/components/TurnstileWidget.js
+@@ -0,0 +1,60 @@
++import Script from "next/script";
++import { useEffect, useRef, useState } from "react";
++
++const SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
++
++// Renders a Cloudflare Turnstile challenge and reports its token upward.
++// Renders nothing when NEXT_PUBLIC_TURNSTILE_SITE_KEY isn't set, matching
++// the server, which skips verification when its secret isn't set.
++//
++// Uses explicit rendering (not the auto-scan) because this widget mounts
++// and unmounts as the user toggles between sign in and register — an
++// auto-scan only sees elements present when the script first loads.
++export default function TurnstileWidget({ onToken, resetSignal }) {
++  const containerRef = useRef(null);
++  const widgetIdRef = useRef(null);
++  const onTokenRef = useRef(onToken);
++  const [scriptReady, setScriptReady] = useState(false);
++
++  useEffect(() => {
++    onTokenRef.current = onToken;
++  }, [onToken]);
++
++  useEffect(() => {
++    if (!SITE_KEY || !scriptReady || !containerRef.current || !window.turnstile) return;
++
++    const id = window.turnstile.render(containerRef.current, {
++      sitekey: SITE_KEY,
++      callback: (token) => onTokenRef.current(token),
++      "expired-callback": () => onTokenRef.current(""),
++      "error-callback": () => onTokenRef.current(""),
++    });
++    widgetIdRef.current = id;
++
++    return () => {
++      if (window.turnstile) window.turnstile.remove(id);
++      widgetIdRef.current = null;
++    };
++  }, [scriptReady]);
++
++  // Tokens are single-use, so the parent bumps resetSignal after every
++  // submit attempt to get a fresh challenge.
++  useEffect(() => {
++    if (!resetSignal || widgetIdRef.current === null || !window.turnstile) return;
++    window.turnstile.reset(widgetIdRef.current);
++    onTokenRef.current("");
++  }, [resetSignal]);
++
++  if (!SITE_KEY) return null;
++
++  return (
++    <>
++      <Script
++        src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
++        strategy="afterInteractive"
++        onReady={() => setScriptReady(true)}
++      />
++      <div ref={containerRef} style={{ margin: "4px 0 12px" }} />
++    </>
++  );
++}
+diff --git a/src/components/VerifyEmailBanner.js b/src/components/VerifyEmailBanner.js
+new file mode 100644
+index 0000000..d11cfac
+--- /dev/null
++++ b/src/components/VerifyEmailBanner.js
+@@ -0,0 +1,39 @@
++import { useState } from "react";
++
++export default function VerifyEmailBanner({ email }) {
++  const [state, setState] = useState("idle"); // idle | sending | sent | error
++  const [error, setError] = useState("");
++
++  const resend = async () => {
++    setState("sending");
++    const res = await fetch("/api/auth/resend-verification", { method: "POST" });
++    if (res.ok) {
++      setState("sent");
++    } else {
++      const data = await res.json().catch(() => ({}));
++      setError(data.error || "Something went wrong.");
++      setState("error");
++    }
++  };
++
++  return (
++    <div style={{ background: "var(--paper-raised)", borderBottom: "1px solid var(--line)" }}>
++      <div
++        className="container"
++        style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", padding: "12px 24px" }}
++      >
++        <span style={{ color: "var(--ink)", fontSize: "0.9rem" }}>
++          {state === "sent"
++            ? `Verification email sent to ${email}. Check your inbox.`
++            : `Please verify your email. We sent a link to ${email}.`}
++        </span>
++        {state !== "sent" && (
++          <button type="button" className="btn btn-outline btn-sm" onClick={resend} disabled={state === "sending"}>
++            {state === "sending" ? "Sending..." : "Resend email"}
++          </button>
++        )}
++        {state === "error" && <span style={{ color: "var(--danger)", fontSize: "0.85rem" }}>{error}</span>}
++      </div>
++    </div>
++  );
++}
+diff --git a/src/lib/authOptions.js b/src/lib/authOptions.js
+index 8e64ddd..297a601 100644
+--- a/src/lib/authOptions.js
++++ b/src/lib/authOptions.js
+@@ -35,8 +35,11 @@ export const authOptions = {
+   },
+   callbacks: {
+     async jwt({ token, user, trigger }) {
+-      // On initial sign-in, add user.id to the token
+-      if (user) token.id = user.id;
++      // On initial sign-in, add user.id (and verified status) to the token
++      if (user) {
++        token.id = user.id;
++        token.emailVerified = Boolean(user.emailVerified);
++      }
+ 
+       // The settings page calls useSession().update() after a successful
+       // profile save. Without this, the JWT (and therefore the session)
+@@ -44,11 +47,12 @@ export const authOptions = {
+       if (trigger === "update" && token.id) {
+         const dbUser = await prisma.user.findUnique({
+           where: { id: token.id },
+-          select: { name: true, email: true },
++          select: { name: true, email: true, emailVerified: true },
+         });
+         if (dbUser) {
+           token.name = dbUser.name;
+           token.email = dbUser.email;
++          token.emailVerified = Boolean(dbUser.emailVerified);
+         }
+       }
+       return token;
+@@ -57,6 +61,7 @@ export const authOptions = {
+       // Copy the user.id from the token into the session
+       if (session?.user && token?.id) {
+         session.user.id = token.id;
++        session.user.emailVerified = Boolean(token.emailVerified);
+       }
+       return session;
+     },
+diff --git a/src/lib/email.js b/src/lib/email.js
+index bd4a79b..344a791 100644
+--- a/src/lib/email.js
++++ b/src/lib/email.js
+@@ -25,3 +25,21 @@ export async function sendPasswordResetEmail(to, resetUrl) {
+     `,
+   });
+ }
++
++export async function sendVerificationEmail(to, verifyUrl) {
++  if (!resend) {
++    console.log(`[email:dev] Email verification link for ${to}: ${verifyUrl}`);
++    return;
++  }
++
++  await resend.emails.send({
++    from: FROM,
++    to,
++    subject: "Verify your ImmortalQR email",
++    html: `
++      <p>Welcome to ImmortalQR. Please confirm this is your email address.</p>
++      <p><a href="${verifyUrl}">Verify my email</a></p>
++      <p>This link expires in 24 hours. If you didn't create an account, you can ignore this email.</p>
++    `,
++  });
++}
+diff --git a/src/lib/emailVerification.js b/src/lib/emailVerification.js
+new file mode 100644
+index 0000000..827959e
+--- /dev/null
++++ b/src/lib/emailVerification.js
+@@ -0,0 +1,14 @@
++import { randomBytes, createHash } from "crypto";
++
++export const VERIFY_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
++
++// Same approach as password reset: only a hash of the token is stored,
++// the raw value only ever exists in the emailed link.
++export function generateVerifyToken() {
++  const token = randomBytes(32).toString("hex");
++  return { token, tokenHash: hashVerifyToken(token) };
++}
++
++export function hashVerifyToken(token) {
++  return createHash("sha256").update(token).digest("hex");
++}
+diff --git a/src/lib/turnstile.js b/src/lib/turnstile.js
+new file mode 100644
+index 0000000..99487ca
+--- /dev/null
++++ b/src/lib/turnstile.js
+@@ -0,0 +1,35 @@
++// Server-side verification of a Cloudflare Turnstile token.
++//
++// If TURNSTILE_SECRET_KEY isn't set, verification is skipped entirely, so
++// local dev and first deploys work before Turnstile is configured. Once
++// the secret IS set, this fails closed: a missing token, a rejected
++// token, or an unreachable Cloudflare all mean "not verified".
++export function isTurnstileEnabled() {
++  return Boolean(process.env.TURNSTILE_SECRET_KEY);
++}
++
++export async function verifyTurnstileToken(token, remoteIp) {
++  const secret = process.env.TURNSTILE_SECRET_KEY;
++  if (!secret) return { ok: true };
++  if (!token || typeof token !== "string") return { ok: false };
++
++  const body = new URLSearchParams({ secret, response: token });
++  if (remoteIp && remoteIp !== "unknown") body.set("remoteip", remoteIp);
++
++  const controller = new AbortController();
++  const timeout = setTimeout(() => controller.abort(), 5000);
++  try {
++    const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
++      method: "POST",
++      headers: { "Content-Type": "application/x-www-form-urlencoded" },
++      body,
++      signal: controller.signal,
++    });
++    const data = await res.json();
++    return { ok: data.success === true };
++  } catch (err) {
++    return { ok: false, error: err };
++  } finally {
++    clearTimeout(timeout);
++  }
++}
+diff --git a/src/pages/api/auth/profile.js b/src/pages/api/auth/profile.js
+index a189609..acd02b6 100644
+--- a/src/pages/api/auth/profile.js
++++ b/src/pages/api/auth/profile.js
+@@ -1,8 +1,11 @@
++import * as Sentry from "@sentry/nextjs";
+ import { getServerSession } from "next-auth";
+ import { authOptions } from "../../../lib/authOptions";
+ import prisma from "../../../lib/prisma";
+ import { hash } from "bcryptjs";
+ import isEmail from "validator/lib/isEmail";
++import { generateVerifyToken, VERIFY_TOKEN_TTL_MS } from "../../../lib/emailVerification";
++import { sendVerificationEmail } from "../../../lib/email";
+ 
+ const MIN_PASSWORD_LENGTH = 8;
+ const MAX_NAME_LENGTH = 50;
+@@ -23,10 +26,25 @@ export default async function handler(req, res) {
+     }
+     data.name = trimmedName;
+   }
++  let pendingVerifyToken = null;
++  let pendingVerifyEmail = null;
+   if (email) {
+     const normalizedEmail = email.trim().toLowerCase();
+     if (!isEmail(normalizedEmail)) return res.status(400).json({ error: "Invalid email" });
+-    data.email = normalizedEmail;
++
++    // The settings form resends the current email on every save, so only
++    // treat this as a change when the address actually differs. A changed
++    // address is unverified until its owner clicks a fresh link.
++    const current = await prisma.user.findUnique({ where: { id: session.user.id }, select: { email: true } });
++    if (current && current.email !== normalizedEmail) {
++      const { token, tokenHash } = generateVerifyToken();
++      data.email = normalizedEmail;
++      data.emailVerified = null;
++      data.verifyTokenHash = tokenHash;
++      data.verifyTokenExpires = new Date(Date.now() + VERIFY_TOKEN_TTL_MS);
++      pendingVerifyToken = token;
++      pendingVerifyEmail = normalizedEmail;
++    }
+   }
+   if (password) {
+     if (password.length < MIN_PASSWORD_LENGTH) {
+@@ -40,6 +58,16 @@ export default async function handler(req, res) {
+ 
+   try {
+     const user = await prisma.user.update({ where: { id: session.user.id }, data, select: { name: true, email: true } });
++
++    if (pendingVerifyToken) {
++      try {
++        await sendVerificationEmail(pendingVerifyEmail, `${process.env.NEXTAUTH_URL}/verify-email?token=${pendingVerifyToken}`);
++      } catch (err) {
++        console.error("Failed to send verification email:", err);
++        Sentry.captureException(err);
++      }
++    }
++
+     res.status(200).json({ ok: true, name: user.name, email: user.email });
+   } catch (err) {
+     if (err.code === "P2002") return res.status(409).json({ error: "Email already in use" });
+diff --git a/src/pages/api/auth/register.js b/src/pages/api/auth/register.js
+index dc871cb..fbb70c9 100644
+--- a/src/pages/api/auth/register.js
++++ b/src/pages/api/auth/register.js
+@@ -1,7 +1,11 @@
++import * as Sentry from "@sentry/nextjs";
+ import prisma from "../../../lib/prisma";
+ import { hash } from "bcryptjs";
+ import isEmail from "validator/lib/isEmail";
+ import { createLimiter, getClientIp } from "../../../lib/rateLimit";
++import { verifyTurnstileToken } from "../../../lib/turnstile";
++import { generateVerifyToken, VERIFY_TOKEN_TTL_MS } from "../../../lib/emailVerification";
++import { sendVerificationEmail } from "../../../lib/email";
+ 
+ const MIN_PASSWORD_LENGTH = 8;
+ const REGISTER_WINDOW_MS = 15 * 60 * 1000;
+@@ -15,22 +19,52 @@ const registerLimiter = createLimiter("register", {
+ export default async function handler(req, res) {
+   if (req.method !== "POST") return res.status(405).end();
+ 
+-  const { allowed, retryAfterMs } = await registerLimiter.check(getClientIp(req));
++  const ip = getClientIp(req);
++  const { allowed, retryAfterMs } = await registerLimiter.check(ip);
+   if (!allowed) {
+     res.setHeader("Retry-After", Math.ceil(retryAfterMs / 1000));
+     return res.status(429).json({ error: "Too many registration attempts. Try again later." });
+   }
+ 
+-  const { email, password, name } = req.body || {};
++  const { email, password, name, turnstileToken } = req.body || {};
+   if (!email || !password) return res.status(400).json({ error: "Email and password required" });
+   const normalizedEmail = email.trim().toLowerCase();
+   if (!isEmail(normalizedEmail)) return res.status(400).json({ error: "Invalid email" });
+   if (password.length < MIN_PASSWORD_LENGTH) {
+     return res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` });
+   }
++
++  // Bot check comes after the cheap input validation above (so a typo
++  // doesn't burn a single-use token) but before any database work.
++  const captcha = await verifyTurnstileToken(turnstileToken, ip);
++  if (!captcha.ok) {
++    if (captcha.error) Sentry.captureException(captcha.error);
++    return res.status(400).json({ error: "Verification failed. Please try again." });
++  }
++
+   const exists = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+   if (exists) return res.status(409).json({ error: "User exists" });
++
+   const passwordHash = await hash(password, 10);
+-  const user = await prisma.user.create({ data: { email: normalizedEmail, name, passwordHash } });
++  const { token, tokenHash } = generateVerifyToken();
++  const user = await prisma.user.create({
++    data: {
++      email: normalizedEmail,
++      name,
++      passwordHash,
++      verifyTokenHash: tokenHash,
++      verifyTokenExpires: new Date(Date.now() + VERIFY_TOKEN_TTL_MS),
++    },
++  });
++
++  // Best effort: a failed email shouldn't undo a successful signup. The
++  // dashboard offers a "resend" button for exactly this case.
++  try {
++    await sendVerificationEmail(normalizedEmail, `${process.env.NEXTAUTH_URL}/verify-email?token=${token}`);
++  } catch (err) {
++    console.error("Failed to send verification email:", err);
++    Sentry.captureException(err);
++  }
++
+   return res.status(201).json({ id: user.id });
+-}
+\ No newline at end of file
++}
+diff --git a/src/pages/api/auth/resend-verification.js b/src/pages/api/auth/resend-verification.js
+new file mode 100644
+index 0000000..6a6b0bb
+--- /dev/null
++++ b/src/pages/api/auth/resend-verification.js
+@@ -0,0 +1,47 @@
++import * as Sentry from "@sentry/nextjs";
++import { getServerSession } from "next-auth";
++import { authOptions } from "../../../lib/authOptions";
++import prisma from "../../../lib/prisma";
++import { createLimiter } from "../../../lib/rateLimit";
++import { generateVerifyToken, VERIFY_TOKEN_TTL_MS } from "../../../lib/emailVerification";
++import { sendVerificationEmail } from "../../../lib/email";
++
++const resendLimiter = createLimiter("resend-verification", {
++  windowMs: 60 * 60 * 1000,
++  max: 3,
++});
++
++export default async function handler(req, res) {
++  if (req.method !== "POST") return res.status(405).end();
++  const session = await getServerSession(req, res, authOptions);
++  if (!session?.user?.id) return res.status(401).end();
++
++  const { allowed, retryAfterMs } = await resendLimiter.check(session.user.id);
++  if (!allowed) {
++    res.setHeader("Retry-After", Math.ceil(retryAfterMs / 1000));
++    return res.status(429).json({ error: "Too many requests. Try again later." });
++  }
++
++  const user = await prisma.user.findUnique({
++    where: { id: session.user.id },
++    select: { email: true, emailVerified: true },
++  });
++  if (!user) return res.status(404).end();
++  if (user.emailVerified) return res.status(200).json({ ok: true, alreadyVerified: true });
++
++  const { token, tokenHash } = generateVerifyToken();
++  await prisma.user.update({
++    where: { id: session.user.id },
++    data: { verifyTokenHash: tokenHash, verifyTokenExpires: new Date(Date.now() + VERIFY_TOKEN_TTL_MS) },
++  });
++
++  try {
++    await sendVerificationEmail(user.email, `${process.env.NEXTAUTH_URL}/verify-email?token=${token}`);
++  } catch (err) {
++    console.error("Failed to send verification email:", err);
++    Sentry.captureException(err);
++    return res.status(502).json({ error: "Couldn't send the email. Please try again shortly." });
++  }
++
++  return res.status(200).json({ ok: true });
++}
+diff --git a/src/pages/api/auth/verify-email.js b/src/pages/api/auth/verify-email.js
+new file mode 100644
+index 0000000..23ec6a6
+--- /dev/null
++++ b/src/pages/api/auth/verify-email.js
+@@ -0,0 +1,23 @@
++import prisma from "../../../lib/prisma";
++import { hashVerifyToken } from "../../../lib/emailVerification";
++
++export default async function handler(req, res) {
++  if (req.method !== "POST") return res.status(405).end();
++
++  const { token } = req.body || {};
++  if (!token || typeof token !== "string") {
++    return res.status(400).json({ error: "Token is required" });
++  }
++
++  const user = await prisma.user.findUnique({ where: { verifyTokenHash: hashVerifyToken(token) } });
++  if (!user || !user.verifyTokenExpires || user.verifyTokenExpires < new Date()) {
++    return res.status(400).json({ error: "This verification link is invalid or has expired." });
++  }
++
++  await prisma.user.update({
++    where: { id: user.id },
++    data: { emailVerified: new Date(), verifyTokenHash: null, verifyTokenExpires: null },
++  });
++
++  return res.status(200).json({ ok: true });
++}
+diff --git a/src/pages/dashboard.js b/src/pages/dashboard.js
+index 67522ee..673ff05 100644
+--- a/src/pages/dashboard.js
++++ b/src/pages/dashboard.js
+@@ -4,6 +4,7 @@ import RequireAuth from "../components/RequireAuth";
+ import isURL from "validator/lib/isURL";
+ import QrTable from "../components/QrTable";
+ import Nav from "../components/Nav";
++import VerifyEmailBanner from "../components/VerifyEmailBanner";
+ 
+ export default function Dashboard() {
+   return (
+@@ -51,6 +52,7 @@ function DashboardInner() {
+   return (
+     <main className="page">
+       <Nav userLabel={session?.user?.name || session?.user?.email} />
++      {session?.user && !session.user.emailVerified && <VerifyEmailBanner email={session.user.email} />}
+       <div className="container" style={{ paddingTop: 36, paddingBottom: 48 }}>
+         <h1 style={{ fontSize: "1.8rem" }}>Your QR codes</h1>
+ 
+diff --git a/src/pages/login.js b/src/pages/login.js
+index 9f4cff7..a378416 100644
+--- a/src/pages/login.js
++++ b/src/pages/login.js
+@@ -2,6 +2,9 @@ import { signIn, useSession } from "next-auth/react";
+ import { useEffect, useState } from "react";
+ import { useRouter } from "next/router";
+ import Link from "next/link";
++import TurnstileWidget from "../components/TurnstileWidget";
++
++const TURNSTILE_ENABLED = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
+ 
+ export default function Login() {
+   const { data: session, status } = useSession();
+@@ -9,6 +12,8 @@ export default function Login() {
+   const [form, setForm] = useState({ email: "", password: "", name: "" });
+   const [mode, setMode] = useState("login"); // 'login' | 'register'
+   const [submitting, setSubmitting] = useState(false);
++  const [turnstileToken, setTurnstileToken] = useState("");
++  const [turnstileReset, setTurnstileReset] = useState(0);
+ 
+   useEffect(() => {
+     if (status === "authenticated") router.replace("/dashboard");
+@@ -20,6 +25,10 @@ export default function Login() {
+ 
+   const onSubmit = async (e) => {
+     e.preventDefault();
++    if (mode === "register" && TURNSTILE_ENABLED && !turnstileToken) {
++      alert("Please complete the verification check first.");
++      return;
++    }
+     setSubmitting(true);
+     if (mode === "login") {
+       await signIn("credentials", { email: form.email, password: form.password, callbackUrl: "/dashboard", redirect: true });
+@@ -28,13 +37,15 @@ export default function Login() {
+       const res = await fetch("/api/auth/register", {
+         method: "POST",
+         headers: { "Content-Type": "application/json" },
+-        body: JSON.stringify(form),
++        body: JSON.stringify({ ...form, turnstileToken }),
+       });
+       if (res.ok) {
+         await signIn("credentials", { email: form.email, password: form.password, callbackUrl: "/dashboard" });
+       } else {
+         const data = await res.json().catch(() => ({}));
+         alert(data.error || "Registration failed");
++        // Turnstile tokens are single-use, so a failed attempt needs a new one.
++        setTurnstileReset((n) => n + 1);
+         setSubmitting(false);
+       }
+     }
+@@ -96,6 +107,8 @@ export default function Login() {
+             />
+           </div>
+ 
++          {mode === "register" && <TurnstileWidget onToken={setTurnstileToken} resetSignal={turnstileReset} />}
++
+           <button type="submit" className="btn btn-primary btn-full" disabled={submitting} style={{ marginTop: 8 }}>
+             {submitting ? "Please wait..." : mode === "login" ? "Sign in" : "Create account"}
+           </button>
+diff --git a/src/pages/privacy.js b/src/pages/privacy.js
+index c696a1a..cb7f2f0 100644
+--- a/src/pages/privacy.js
++++ b/src/pages/privacy.js
+@@ -40,11 +40,16 @@ export default function Privacy() {
+ 
+       <h2>3. Third-party services</h2>
+       <p>
+-        We use a database host to store account and link data, and an
+-        email provider (Resend) to send password reset emails. These
+-        providers process data on our behalf and have their own privacy
+-        practices.
++        We use the following services to run ImmortalQR. They process data
++        on our behalf and have their own privacy practices.
+       </p>
++      <ul>
++        <li>A database host, to store account and link data</li>
++        <li>Resend, to send account emails such as email verification and password resets</li>
++        <li>Upstash, to enforce rate limits; this involves temporarily storing IP addresses</li>
++        <li>Sentry, to report errors; error reports can include technical details such as your browser, the page you were on, and your IP address</li>
++        <li>Cloudflare Turnstile, to check that sign-ups come from real people rather than bots</li>
++      </ul>
+ 
+       <h2>4. Data retention</h2>
+       <p>
+diff --git a/src/pages/verify-email.js b/src/pages/verify-email.js
+new file mode 100644
+index 0000000..460fcbd
+--- /dev/null
++++ b/src/pages/verify-email.js
+@@ -0,0 +1,73 @@
++import { useEffect, useRef, useState } from "react";
++import { useRouter } from "next/router";
++import { useSession } from "next-auth/react";
++import Link from "next/link";
++
++export default function VerifyEmail() {
++  const router = useRouter();
++  const { update } = useSession();
++  const [state, setState] = useState("verifying"); // verifying | success | error
++  const [message, setMessage] = useState("");
++  const started = useRef(false);
++
++  const token = router.query.token;
++
++  useEffect(() => {
++    // The token is only available once the router is ready, and the ref
++    // keeps React's dev-mode double effect from spending a single-use
++    // token on the first call and failing the second.
++    if (!router.isReady || started.current) return;
++    started.current = true;
++
++    if (!token) {
++      setState("error");
++      setMessage("This verification link is missing its token.");
++      return;
++    }
++
++    (async () => {
++      const res = await fetch("/api/auth/verify-email", {
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify({ token }),
++      });
++      if (res.ok) {
++        setState("success");
++        // If they're signed in on this browser, refresh the session so the
++        // dashboard banner goes away without a re-login. (Harmless when
++        // signed out — there's just no token to refresh.)
++        try { await update(); } catch { /* non-critical */ }
++      } else {
++        const data = await res.json().catch(() => ({}));
++        setState("error");
++        setMessage(data.error || "Something went wrong.");
++      }
++    })();
++  }, [router.isReady, token, update]);
++
++  return (
++    <main className="page" style={{ justifyContent: "center" }}>
++      <div className="container" style={{ maxWidth: 420 }}>
++        {state === "verifying" && <h1 style={{ fontSize: "1.6rem" }}>Verifying your email…</h1>}
++        {state === "success" && (
++          <>
++            <h1 style={{ fontSize: "1.6rem" }}>Email verified</h1>
++            <p>Thanks — your email address is confirmed.</p>
++            <p>
++              <Link href="/dashboard" className="btn btn-primary">Go to dashboard</Link>
++            </p>
++          </>
++        )}
++        {state === "error" && (
++          <>
++            <h1 style={{ fontSize: "1.6rem" }}>Couldn&apos;t verify</h1>
++            <p>{message}</p>
++            <p>
++              If you&apos;re signed in, you can request a new link from your <Link href="/dashboard">dashboard</Link>.
++            </p>
++          </>
++        )}
++      </div>
++    </main>
++  );
++}
+-- 
+2.43.0
+
