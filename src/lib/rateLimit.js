@@ -1,17 +1,21 @@
-// Simple fixed-window rate limiter.
-//
-// NOTE: this is in-memory, so it's per server process. On a single
-// long-running server this works fine. On serverless platforms
-// (Vercel, etc.) each instance has its own memory, so a determined
-// attacker spread across instances can exceed these limits. That's
-// an acceptable tradeoff to ship something working now; if abuse
-// becomes a real problem, swap this for a shared store like
-// Upstash Redis (@upstash/ratelimit) — the call sites below don't
-// need to change, just this file's internals.
+import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
 
+// Shared rate limiting via Upstash Redis when configured — this is what
+// actually works across Vercel's serverless instances, unlike the old
+// in-memory version (which only limited requests within one process).
+// Falls back to in-memory automatically when Upstash isn't configured, so
+// local dev keeps working without an Upstash account.
+const redis =
+  process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
+    ? new Redis({
+        url: process.env.UPSTASH_REDIS_REST_URL,
+        token: process.env.UPSTASH_REDIS_REST_TOKEN,
+      })
+    : null;
+
+// --- In-memory fallback (per-process; see note above) ---
 const buckets = new Map();
-
-// Periodically clear old buckets so this doesn't grow forever.
 const CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
 let lastCleanup = Date.now();
 
@@ -23,15 +27,9 @@ function cleanupIfNeeded(now) {
   }
 }
 
-/**
- * @param {string} key - unique identifier for the caller (IP, user id, etc.)
- * @param {{ windowMs: number, max: number }} opts
- * @returns {{ allowed: boolean, retryAfterMs?: number }}
- */
-export function rateLimit(key, { windowMs, max }) {
+function memoryCheck(key, windowMs, max) {
   const now = Date.now();
   cleanupIfNeeded(now);
-
   const bucket = buckets.get(key);
   if (!bucket || now - bucket.start > windowMs) {
     buckets.set(key, { start: now, count: 1 });
@@ -42,6 +40,36 @@ export function rateLimit(key, { windowMs, max }) {
   }
   bucket.count += 1;
   return { allowed: true };
+}
+
+/**
+ * Creates a named limiter. Call .check(key) to test-and-consume one
+ * request against it. Create one per call site, at module scope (not
+ * inside the handler), and reuse it across requests.
+ *
+ * @param {string} name - unique name for this limiter (used as a Redis
+ *   key prefix and to namespace the in-memory fallback)
+ * @param {{ windowMs: number, max: number }} opts
+ */
+export function createLimiter(name, { windowMs, max }) {
+  const upstash = redis
+    ? new Ratelimit({
+        redis,
+        limiter: Ratelimit.slidingWindow(max, `${Math.max(1, Math.round(windowMs / 1000))} s`),
+        prefix: `ratelimit:${name}`,
+        analytics: false,
+      })
+    : null;
+
+  return {
+    async check(key) {
+      if (upstash) {
+        const { success, reset } = await upstash.limit(key);
+        return success ? { allowed: true } : { allowed: false, retryAfterMs: Math.max(0, reset - Date.now()) };
+      }
+      return memoryCheck(`${name}:${key}`, windowMs, max);
+    },
+  };
 }
 
 export function getClientIp(req) {

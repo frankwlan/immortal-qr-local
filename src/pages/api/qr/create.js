@@ -3,21 +3,23 @@ import { authOptions } from "../../../lib/authOptions";
 import prisma from "../../../lib/prisma";
 import isURL from "validator/lib/isURL";
 import { randomUUID } from "crypto";
-import { rateLimit } from "../../../lib/rateLimit";
+import { createLimiter } from "../../../lib/rateLimit";
 
 const CREATE_WINDOW_MS = 60 * 60 * 1000;
 const CREATE_MAX_PER_WINDOW = 30;
 const MAX_ACTIVE_LINKS_PER_USER = 50;
+
+const createLinkLimiter = createLimiter("qr-create", {
+  windowMs: CREATE_WINDOW_MS,
+  max: CREATE_MAX_PER_WINDOW,
+});
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
   const session = await getServerSession(req, res, authOptions);
   if (!session?.user?.id) return res.status(401).end();
 
-  const { allowed, retryAfterMs } = rateLimit(`qr-create:${session.user.id}`, {
-    windowMs: CREATE_WINDOW_MS,
-    max: CREATE_MAX_PER_WINDOW,
-  });
+  const { allowed, retryAfterMs } = await createLinkLimiter.check(session.user.id);
   if (!allowed) {
     res.setHeader("Retry-After", Math.ceil(retryAfterMs / 1000));
     return res.status(429).json({ error: "Too many QR codes created recently. Try again later." });

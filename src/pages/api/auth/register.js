@@ -1,19 +1,21 @@
 import prisma from "../../../lib/prisma";
 import { hash } from "bcryptjs";
 import isEmail from "validator/lib/isEmail";
-import { rateLimit, getClientIp } from "../../../lib/rateLimit";
+import { createLimiter, getClientIp } from "../../../lib/rateLimit";
 
 const MIN_PASSWORD_LENGTH = 8;
 const REGISTER_WINDOW_MS = 15 * 60 * 1000;
 const REGISTER_MAX_PER_WINDOW = 5;
 
+const registerLimiter = createLimiter("register", {
+  windowMs: REGISTER_WINDOW_MS,
+  max: REGISTER_MAX_PER_WINDOW,
+});
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const { allowed, retryAfterMs } = rateLimit(`register:${getClientIp(req)}`, {
-    windowMs: REGISTER_WINDOW_MS,
-    max: REGISTER_MAX_PER_WINDOW,
-  });
+  const { allowed, retryAfterMs } = await registerLimiter.check(getClientIp(req));
   if (!allowed) {
     res.setHeader("Retry-After", Math.ceil(retryAfterMs / 1000));
     return res.status(429).json({ error: "Too many registration attempts. Try again later." });

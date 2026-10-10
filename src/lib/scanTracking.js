@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import * as Sentry from "@sentry/nextjs";
 import prisma from "./prisma";
 
 export function hashIp(ip) {
@@ -19,5 +20,8 @@ export async function logScan(qrLinkId, { ip, userAgent } = {}) {
     });
   } catch (err) {
     console.error("Failed to log scan event:", err);
+    // Lower severity — a dropped analytics write is annoying, not an
+    // outage, and shouldn't page anyone the way a real error would.
+    Sentry.captureException(err, { level: "warning" });
   }
 }
