@@ -25,6 +25,10 @@ model User {
   resetTokenExpires DateTime?
   verifyTokenHash    String?   @unique
   verifyTokenExpires DateTime?
+  // Public handle used in custom QR addresses (/r/<username>/<alias>).
+  // Stored lowercase, set once and never changed (printed QR codes must
+  // keep working), so it doubles as the visible owner of those links.
+  username          String?   @unique
   qrLinks           QrLink[]
   accounts          Account[]
   sessions          Session[]
@@ -38,11 +42,15 @@ model QrLink {
   user        User     @relation(fields: [userId], references: [id])
   destination String
   slug        String   @unique
+  // Optional owner-chosen address, served at /r/<username>/<alias>.
+  // Unique per user, not globally, so two people can both use "menu".
+  alias       String?
   deletedAt   DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   scans       ScanEvent[]
 
+  @@unique([userId, alias])
   @@index([userId, deletedAt])
 }
 

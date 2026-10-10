@@ -9,7 +9,7 @@ const TURNSTILE_ENABLED = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
 export default function Login() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const [form, setForm] = useState({ email: "", password: "", name: "" });
+  const [form, setForm] = useState({ email: "", password: "", name: "", username: "" });
   const [mode, setMode] = useState("login"); // 'login' | 'register'
   const [submitting, setSubmitting] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState("");
@@ -80,6 +80,27 @@ export default function Login() {
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
               />
+            </div>
+          )}
+          {mode === "register" && (
+            <div className="field">
+              <label htmlFor="username">Username</label>
+              <input
+                id="username"
+                className="input"
+                required
+                minLength={3}
+                maxLength={30}
+                placeholder="janedoe"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                value={form.username}
+                onChange={(e) => setForm({ ...form, username: e.target.value.toLowerCase() })}
+              />
+              <p style={{ fontSize: "0.8rem", marginTop: 4, color: "var(--ink-soft)" }}>
+                Appears in your custom QR links (/r/{form.username || "username"}/…). Permanent once chosen.
+              </p>
             </div>
           )}
           <div className="field">

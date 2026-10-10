@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import Link from "next/link";
 import RequireAuth from "../components/RequireAuth";
 import isURL from "validator/lib/isURL";
 import QrTable from "../components/QrTable";
@@ -16,8 +17,9 @@ export default function Dashboard() {
 
 function DashboardInner() {
   const { data: session } = useSession();
+  const username = session?.user?.username;
   const [dest, setDest] = useState("");
-  const [slug, setSlug] = useState("");
+  const [alias, setAlias] = useState("");
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -38,12 +40,12 @@ function DashboardInner() {
     const res = await fetch("/api/qr/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ destination: dest, slug: slug.trim() || undefined })
+      body: JSON.stringify({ destination: dest, alias: alias.trim() || undefined })
     });
     setLoading(false);
     if (res.ok) {
       setDest("");
-      setSlug("");
+      setAlias("");
       await load();
     } else {
       const data = await res.json().catch(() => ({}));
@@ -68,13 +70,14 @@ function DashboardInner() {
           />
           <input
             className="input"
-            value={slug}
-            onChange={(e) => setSlug(e.target.value.toLowerCase())}
-            placeholder="Custom address (optional), e.g. summer-menu"
+            value={alias}
+            onChange={(e) => setAlias(e.target.value.toLowerCase())}
+            placeholder={username ? "Custom address (optional), e.g. summer-menu" : "Choose a username to use custom addresses"}
             maxLength={40}
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
+            disabled={!username}
             style={{ flex: "1 1 100%" }}
           />
           <button type="submit" className="btn btn-primary" disabled={loading}>
@@ -82,9 +85,13 @@ function DashboardInner() {
           </button>
         </form>
         <p style={{ fontSize: "0.85rem", marginBottom: 24, color: "var(--ink-soft)" }}>
-          {slug.trim()
-            ? <>Your link: <code>/r/{slug.trim()}</code></>
-            : "Leave the address blank and we'll generate one. Custom addresses can't be changed later."}
+          {!username ? (
+            <>Want a memorable link like <code>/r/yourname/menu</code>? <Link href="/settings">Choose a username</Link> first.</>
+          ) : alias.trim() ? (
+            <>Your link: <code>/r/{username}/{alias.trim()}</code></>
+          ) : (
+            <>Leave the address blank and we&apos;ll generate one, or add one to get <code>/r/{username}/your-address</code>.</>
+          )}
         </p>
 
         <QrTable items={items} onChange={load} />

@@ -11,7 +11,8 @@ export default async function handler(req, res) {
 
   const { count } = await prisma.qrLink.updateMany({
     where: { id, userId: session.user.id, deletedAt: null },
-    data: { deletedAt: new Date() },
+    // Free the custom address so the owner can reuse it for a new link.
+    data: { deletedAt: new Date(), alias: null },
   });
   if (count === 0) return res.status(404).end();
   res.status(200).json({ ok: true });

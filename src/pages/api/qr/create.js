@@ -4,7 +4,7 @@ import prisma from "../../../lib/prisma";
 import isURL from "validator/lib/isURL";
 import { randomUUID } from "crypto";
 import { createLimiter } from "../../../lib/rateLimit";
-import { validateSlug } from "../../../lib/slug";
+import { validateAlias } from "../../../lib/slug";
 
 const CREATE_WINDOW_MS = 60 * 60 * 1000;
 const CREATE_MAX_PER_WINDOW = 30;
@@ -14,6 +14,12 @@ const createLinkLimiter = createLimiter("qr-create", {
   windowMs: CREATE_WINDOW_MS,
   max: CREATE_MAX_PER_WINDOW,
 });
+
+function conflictsOnAlias(err) {
+  const target = err?.meta?.target;
+  const fields = Array.isArray(target) ? target.join(",") : String(target || "");
+  return fields.includes("alias");
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
@@ -26,17 +32,28 @@ export default async function handler(req, res) {
     return res.status(429).json({ error: "Too many QR codes created recently. Try again later." });
   }
 
-  const { destination, slug: requestedSlug } = req.body || {};
+  const { destination, alias: requestedAlias } = req.body || {};
   if (!isURL(destination || "", { protocols: ["http", "https"], require_protocol: true })) {
     return res.status(400).json({ error: "Invalid URL" });
   }
 
-  // Optional vanity address. Blank/missing means "generate one for me".
-  let customSlug = null;
-  if (typeof requestedSlug === "string" && requestedSlug.trim() !== "") {
-    const checked = validateSlug(requestedSlug);
+  // Optional custom address, served at /r/<username>/<alias>. Blank or
+  // missing means "generate a random one for me".
+  let alias = null;
+  if (typeof requestedAlias === "string" && requestedAlias.trim() !== "") {
+    const checked = validateAlias(requestedAlias);
     if (checked.error) return res.status(400).json({ error: checked.error });
-    customSlug = checked.slug;
+    alias = checked.alias;
+
+    // Read from the database, not the session: the JWT can lag behind a
+    // username that was just chosen.
+    const owner = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { username: true },
+    });
+    if (!owner?.username) {
+      return res.status(400).json({ error: "Choose a username in Settings before using a custom address." });
+    }
   }
 
   const activeCount = await prisma.qrLink.count({
@@ -44,23 +61,6 @@ export default async function handler(req, res) {
   });
   if (activeCount >= MAX_ACTIVE_LINKS_PER_USER) {
     return res.status(403).json({ error: `You've reached the limit of ${MAX_ACTIVE_LINKS_PER_USER} QR codes.` });
-  }
-
-  if (customSlug) {
-    try {
-      const record = await prisma.qrLink.create({
-        data: { userId: session.user.id, destination, slug: customSlug },
-        select: { id: true, slug: true, destination: true },
-      });
-      return res.status(200).json(record);
-    } catch (err) {
-      // Slugs stay reserved even after a link is deleted, so a taken
-      // address can belong to a deleted link too.
-      if (err.code === "P2002") {
-        return res.status(409).json({ error: "That address is already taken." });
-      }
-      throw err;
-    }
   }
 
   const MAX_ATTEMPTS = 5;
@@ -73,13 +73,20 @@ export default async function handler(req, res) {
           userId: session.user.id,
           destination,
           slug,
+          alias,
         },
-        select: { id: true, slug: true, destination: true }
+        select: { id: true, slug: true, alias: true, destination: true },
       });
       return res.status(200).json(record);
     } catch (err) {
-      // P2002 = unique constraint violation (slug collision) — retry with a new slug
-      if (err.code === "P2002" && attempt < MAX_ATTEMPTS - 1) continue;
+      if (err.code === "P2002") {
+        // A taken alias will never succeed on retry; tell the user.
+        if (alias && conflictsOnAlias(err)) {
+          return res.status(409).json({ error: "You already use that custom address." });
+        }
+        // Otherwise it was a random-slug collision — retry with a new one.
+        if (attempt < MAX_ATTEMPTS - 1) continue;
+      }
       throw err;
     }
   }

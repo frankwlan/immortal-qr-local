@@ -1,33 +1,50 @@
-// Rules for user-chosen ("vanity") QR addresses, e.g. /r/summer-menu.
-// Slugs are always stored lowercase so lookups are case-insensitive.
+// Validation for usernames and per-user custom addresses ("aliases").
+// Both are stored lowercase so lookups are case-insensitive.
 
-export const SLUG_MIN = 3;
-export const SLUG_MAX = 40;
+export const USERNAME_MIN = 3;
+export const USERNAME_MAX = 30;
+export const ALIAS_MIN = 3;
+export const ALIAS_MAX = 40;
 
-// Words we keep for ourselves (future routes, and ones that look official
-// or invite phishing-style abuse).
-const RESERVED = new Set([
-  "admin", "api", "app", "about", "account", "auth", "billing", "blog",
-  "contact", "dashboard", "docs", "help", "home", "login", "logout",
-  "pricing", "privacy", "register", "root", "security", "settings",
-  "signin", "signup", "status", "support", "terms", "verify", "www",
-  "immortal", "immortalqr", "immortal-qr", "null", "undefined",
+// Lowercase letters/digits, optionally separated by single hyphens.
+const PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const PATTERN_MESSAGE =
+  "Use only letters, numbers and single hyphens (no spaces, and no hyphen at the start or end).";
+
+// Handles that look official or invite impersonation. Usernames appear in
+// every link we serve, so keep the company's own names to ourselves.
+const RESERVED_USERNAMES = new Set([
+  "admin", "administrator", "api", "app", "auth", "billing", "contact",
+  "dashboard", "help", "home", "info", "legal", "login", "logout", "mail",
+  "moderator", "official", "owner", "postmaster", "privacy", "register",
+  "root", "sales", "security", "settings", "signin", "signup", "staff",
+  "status", "support", "system", "team", "terms", "verify", "webmaster",
+  "www", "immortal", "immortalqr", "immortal-qr", "null", "undefined",
 ]);
 
-// Returns { slug } on success or { error } with a user-facing message.
-export function validateSlug(input) {
-  if (typeof input !== "string") return { error: "Custom address must be text." };
-  const slug = input.trim().toLowerCase();
-  if (slug.length < SLUG_MIN || slug.length > SLUG_MAX) {
-    return { error: `Custom address must be ${SLUG_MIN}–${SLUG_MAX} characters.` };
+// Aliases already live under the owner's username, so only a few words
+// need blocking (they would be confusing next to our own routes).
+const RESERVED_ALIASES = new Set(["api", "login", "admin", "null", "undefined"]);
+
+function check(input, { min, max, label, reserved }) {
+  if (typeof input !== "string") return { error: `${label} must be text.` };
+  const value = input.trim().toLowerCase();
+  if (value.length < min || value.length > max) {
+    return { error: `${label} must be ${min}–${max} characters.` };
   }
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
-    return {
-      error: "Use only letters, numbers and single hyphens (no spaces, and no hyphen at the start or end).",
-    };
-  }
-  if (RESERVED.has(slug)) {
-    return { error: "That address is reserved. Please choose another." };
-  }
-  return { slug };
+  if (!PATTERN.test(value)) return { error: PATTERN_MESSAGE };
+  if (reserved.has(value)) return { error: `That ${label.toLowerCase()} is reserved. Please choose another.` };
+  return { value };
+}
+
+// Returns { username } on success or { error } with a user-facing message.
+export function validateUsername(input) {
+  const r = check(input, { min: USERNAME_MIN, max: USERNAME_MAX, label: "Username", reserved: RESERVED_USERNAMES });
+  return r.error ? r : { username: r.value };
+}
+
+// Returns { alias } on success or { error } with a user-facing message.
+export function validateAlias(input) {
+  const r = check(input, { min: ALIAS_MIN, max: ALIAS_MAX, label: "Custom address", reserved: RESERVED_ALIASES });
+  return r.error ? r : { alias: r.value };
 }
