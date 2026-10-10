@@ -4,6 +4,7 @@ import RequireAuth from "../components/RequireAuth";
 import isURL from "validator/lib/isURL";
 import QrTable from "../components/QrTable";
 import Nav from "../components/Nav";
+import VerifyEmailBanner from "../components/VerifyEmailBanner";
 
 export default function Dashboard() {
   return (
@@ -51,6 +52,7 @@ function DashboardInner() {
   return (
     <main className="page">
       <Nav userLabel={session?.user?.name || session?.user?.email} />
+      {session?.user && !session.user.emailVerified && <VerifyEmailBanner email={session.user.email} />}
       <div className="container" style={{ paddingTop: 36, paddingBottom: 48 }}>
         <h1 style={{ fontSize: "1.8rem" }}>Your QR codes</h1>
 
