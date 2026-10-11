@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
 
 export default function VerifyEmail() {
   const router = useRouter();
+  const { update } = useSession();
   const [state, setState] = useState("verifying"); // verifying | success | error
   const [message, setMessage] = useState("");
   const started = useRef(false);
@@ -31,16 +33,17 @@ export default function VerifyEmail() {
       });
       if (res.ok) {
         setState("success");
-        // The dashboard link below is a full page load, and the session
-        // callback re-checks the database for unverified users, so the
-        // banner clears without relying on a client-side refresh here.
+        // If they're signed in on this browser, refresh the session so the
+        // dashboard banner goes away without a re-login. (Harmless when
+        // signed out — there's just no token to refresh.)
+        try { await update(); } catch { /* non-critical */ }
       } else {
         const data = await res.json().catch(() => ({}));
         setState("error");
         setMessage(data.error || "Something went wrong.");
       }
     })();
-  }, [router.isReady, token]);
+  }, [router.isReady, token, update]);
 
   return (
     <main className="page" style={{ justifyContent: "center" }}>
@@ -51,7 +54,7 @@ export default function VerifyEmail() {
             <h1 style={{ fontSize: "1.6rem" }}>Email verified</h1>
             <p>Thanks — your email address is confirmed.</p>
             <p>
-              <button type="button" className="btn btn-primary" onClick={() => window.location.assign("/dashboard")}>Go to dashboard</button>
+              <Link href="/dashboard" className="btn btn-primary">Go to dashboard</Link>
             </p>
           </>
         )}
