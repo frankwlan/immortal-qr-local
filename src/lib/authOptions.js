@@ -39,7 +39,6 @@ export const authOptions = {
       if (user) {
         token.id = user.id;
         token.emailVerified = Boolean(user.emailVerified);
-        token.username = user.username || null;
       }
 
       // The settings page calls useSession().update() after a successful
@@ -48,19 +47,16 @@ export const authOptions = {
       // Also re-check whenever the token still says "unverified": a user can
       // verify in another tab/browser, or a client-side refresh can no-op,
       // and this lets the stale JWT heal itself on the next session fetch.
-      // The same goes for a missing username (existing accounts that haven't
-      // chosen one yet, or a choice made in another tab). Only users with
-      // something still pending pay for the extra query.
-      if (token.id && (trigger === "update" || !token.emailVerified || !token.username)) {
+      // Only unverified users pay for the extra query.
+      if (token.id && (trigger === "update" || !token.emailVerified)) {
         const dbUser = await prisma.user.findUnique({
           where: { id: token.id },
-          select: { name: true, email: true, emailVerified: true, username: true },
+          select: { name: true, email: true, emailVerified: true },
         });
         if (dbUser) {
           token.name = dbUser.name;
           token.email = dbUser.email;
           token.emailVerified = Boolean(dbUser.emailVerified);
-          token.username = dbUser.username || null;
         }
       }
       return token;
@@ -70,7 +66,6 @@ export const authOptions = {
       if (session?.user && token?.id) {
         session.user.id = token.id;
         session.user.emailVerified = Boolean(token.emailVerified);
-        session.user.username = token.username || null;
       }
       return session;
     },

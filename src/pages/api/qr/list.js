@@ -6,18 +6,12 @@ export default async function handler(req, res) {
   const session = await getServerSession(req, res, authOptions);
   if (!session?.user?.id) return res.status(401).end();
 
-  const owner = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { username: true },
-  });
-
   const items = await prisma.qrLink.findMany({
     where: { userId: session.user.id, deletedAt: null },
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
       slug: true,
-      alias: true,
       destination: true,
       createdAt: true,
       _count: { select: { scans: true } },
@@ -39,9 +33,6 @@ export default async function handler(req, res) {
 
   const result = items.map(({ _count, ...item }) => ({
     ...item,
-    // Lets the client build /r/<username>/<alias> from fresh data rather
-    // than a possibly stale session.
-    ownerUsername: owner?.username || null,
     scanCount: _count.scans,
     lastScannedAt: lastScanByLinkId[item.id] || null,
   }));

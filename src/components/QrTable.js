@@ -34,7 +34,7 @@ export default function QrTable({ items, onChange }) {
         <thead>
           <tr>
             <th>QR</th>
-            <th>Link</th>
+            <th>Slug</th>
             <th>Destination</th>
             <th>Scans</th>
             <th>Actions</th>
@@ -68,8 +68,7 @@ export default function QrTable({ items, onChange }) {
 }
 
 function Row({ it, onDelete, onEdit }) {
-  const path = it.alias && it.ownerUsername ? `/r/${it.ownerUsername}/${it.alias}` : `/r/${it.slug}`;
-  const redirectUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}${path}`;
+  const redirectUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/r/${it.slug}`;
   const [dataUrl, setDataUrl] = useState("");
 
   useEffect(() => {
@@ -83,7 +82,7 @@ function Row({ it, onDelete, onEdit }) {
   return (
     <tr>
       <td>{dataUrl ? <img src={dataUrl} alt="qr" width={72} height={72} /> : "..."}</td>
-      <td><code>{path}</code></td>
+      <td><code>{it.slug}</code></td>
       <td style={{ maxWidth: 380, wordBreak: "break-all" }}>
         <a href={redirectUrl} target="_blank" rel="noreferrer">{it.destination}</a>
       </td>

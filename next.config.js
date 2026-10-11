@@ -9,8 +9,6 @@ const nextConfig = {
       // actual implementation so client code and QRCode.toDataURL calls
       // stay simple.
       { source: "/r/:slug", destination: "/api/qr/redirect/:slug" },
-      // Owner-namespaced custom addresses: /r/<username>/<alias>.
-      { source: "/r/:username/:alias", destination: "/api/qr/alias/:username/:alias" },
     ];
   },
 };
