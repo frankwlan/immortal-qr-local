@@ -23,6 +23,9 @@ model User {
   passwordHash      String?
   resetTokenHash    String?   @unique
   resetTokenExpires DateTime?
+  // Bumped to log the user out everywhere (e.g. after a password reset).
+  // Every JWT carries the value it was issued with; a mismatch revokes it.
+  sessionVersion    Int       @default(0)
   verifyTokenHash    String?   @unique
   verifyTokenExpires DateTime?
   qrLinks           QrLink[]
