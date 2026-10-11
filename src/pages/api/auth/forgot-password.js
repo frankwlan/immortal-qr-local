@@ -2,6 +2,7 @@ import prisma from "../../../lib/prisma";
 import isEmail from "validator/lib/isEmail";
 import { generateResetToken, RESET_TOKEN_TTL_MS } from "../../../lib/passwordReset";
 import { sendPasswordResetEmail } from "../../../lib/email";
+import { getBaseUrl } from "../../../lib/baseUrl";
 import * as Sentry from "@sentry/nextjs";
 import { createLimiter, getClientIp } from "../../../lib/rateLimit";
 
@@ -23,7 +24,7 @@ export default async function handler(req, res) {
   }
 
   const { email } = req.body || {};
-  if (!email || !isEmail(email)) {
+  if (typeof email !== "string" || !isEmail(email.trim())) {
     return res.status(400).json({ error: "A valid email is required" });
   }
   const normalizedEmail = email.trim().toLowerCase();
@@ -47,7 +48,7 @@ export default async function handler(req, res) {
     },
   });
 
-  const resetUrl = `${process.env.NEXTAUTH_URL}/reset-password?token=${token}`;
+  const resetUrl = `${getBaseUrl()}/reset-password?token=${token}`;
   try {
     await sendPasswordResetEmail(normalizedEmail, resetUrl);
   } catch (err) {

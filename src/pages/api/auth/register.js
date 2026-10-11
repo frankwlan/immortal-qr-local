@@ -6,8 +6,9 @@ import { createLimiter, getClientIp } from "../../../lib/rateLimit";
 import { verifyTurnstileToken } from "../../../lib/turnstile";
 import { generateVerifyToken, VERIFY_TOKEN_TTL_MS } from "../../../lib/emailVerification";
 import { sendVerificationEmail } from "../../../lib/email";
+import { getBaseUrl } from "../../../lib/baseUrl";
+import { isString, passwordProblem, MAX_NAME_LENGTH } from "../../../lib/validation";
 
-const MIN_PASSWORD_LENGTH = 8;
 const REGISTER_WINDOW_MS = 15 * 60 * 1000;
 const REGISTER_MAX_PER_WINDOW = 5;
 
@@ -28,10 +29,16 @@ export default async function handler(req, res) {
 
   const { email, password, name, turnstileToken } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: "Email and password required" });
+  if (!isString(email)) return res.status(400).json({ error: "Invalid email" });
   const normalizedEmail = email.trim().toLowerCase();
   if (!isEmail(normalizedEmail)) return res.status(400).json({ error: "Invalid email" });
-  if (password.length < MIN_PASSWORD_LENGTH) {
-    return res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` });
+  const passwordError = passwordProblem(password);
+  if (passwordError) return res.status(400).json({ error: passwordError });
+
+  let displayName = null;
+  if (name !== undefined && name !== null && name !== "") {
+    if (!isString(name)) return res.status(400).json({ error: "Invalid name" });
+    displayName = name.trim().slice(0, MAX_NAME_LENGTH) || null;
   }
 
   // Bot check comes after the cheap input validation above (so a typo
@@ -50,7 +57,7 @@ export default async function handler(req, res) {
   const user = await prisma.user.create({
     data: {
       email: normalizedEmail,
-      name,
+      name: displayName,
       passwordHash,
       verifyTokenHash: tokenHash,
       verifyTokenExpires: new Date(Date.now() + VERIFY_TOKEN_TTL_MS),
@@ -60,7 +67,7 @@ export default async function handler(req, res) {
   // Best effort: a failed email shouldn't undo a successful signup. The
   // dashboard offers a "resend" button for exactly this case.
   try {
-    await sendVerificationEmail(normalizedEmail, `${process.env.NEXTAUTH_URL}/verify-email?token=${token}`);
+    await sendVerificationEmail(normalizedEmail, `${getBaseUrl()}/verify-email?token=${token}`);
   } catch (err) {
     console.error("Failed to send verification email:", err);
     Sentry.captureException(err);

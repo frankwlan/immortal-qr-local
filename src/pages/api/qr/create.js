@@ -1,7 +1,8 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../../lib/authOptions";
 import prisma from "../../../lib/prisma";
-import isURL from "validator/lib/isURL";
+import { normalizeDestination } from "../../../lib/url";
+import { requireSameOrigin } from "../../../lib/sameOrigin";
 import { randomUUID } from "crypto";
 import { createLimiter } from "../../../lib/rateLimit";
 
@@ -16,6 +17,7 @@ const createLinkLimiter = createLimiter("qr-create", {
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
+  if (!requireSameOrigin(req, res)) return;
   const session = await getServerSession(req, res, authOptions);
   if (!session?.user?.id) return res.status(401).end();
 
@@ -25,10 +27,9 @@ export default async function handler(req, res) {
     return res.status(429).json({ error: "Too many QR codes created recently. Try again later." });
   }
 
-  const { destination } = req.body || {};
-  if (!isURL(destination || "", { protocols: ["http", "https"], require_protocol: true })) {
-    return res.status(400).json({ error: "Invalid URL" });
-  }
+  const normalized = normalizeDestination((req.body || {}).destination);
+  if (normalized.error) return res.status(400).json({ error: normalized.error });
+  const destination = normalized.url;
 
   const activeCount = await prisma.qrLink.count({
     where: { userId: session.user.id, deletedAt: null },
