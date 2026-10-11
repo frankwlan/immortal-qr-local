@@ -1,14 +1,19 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../../lib/authOptions";
 import prisma from "../../../lib/prisma";
-import isURL from "validator/lib/isURL";
+import { normalizeDestination } from "../../../lib/url";
+import { requireSameOrigin } from "../../../lib/sameOrigin";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
+  if (!requireSameOrigin(req, res)) return;
   const session = await getServerSession(req, res, authOptions);
   if (!session?.user?.id) return res.status(401).end();
-  const { id, destination } = req.body || {};
-  if (!id || !isURL(destination || "", { protocols: ["http", "https"], require_protocol: true })) return res.status(400).json({ error: "Bad input" });
+  const { id, destination: rawDestination } = req.body || {};
+  if (typeof id !== "string" || !id) return res.status(400).json({ error: "Bad input" });
+  const normalized = normalizeDestination(rawDestination);
+  if (normalized.error) return res.status(400).json({ error: normalized.error });
+  const destination = normalized.url;
 
   const { count } = await prisma.qrLink.updateMany({
     where: { id, userId: session.user.id, deletedAt: null },

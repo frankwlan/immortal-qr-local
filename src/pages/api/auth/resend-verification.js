@@ -5,6 +5,8 @@ import prisma from "../../../lib/prisma";
 import { createLimiter } from "../../../lib/rateLimit";
 import { generateVerifyToken, VERIFY_TOKEN_TTL_MS } from "../../../lib/emailVerification";
 import { sendVerificationEmail } from "../../../lib/email";
+import { getBaseUrl } from "../../../lib/baseUrl";
+import { requireSameOrigin } from "../../../lib/sameOrigin";
 
 const resendLimiter = createLimiter("resend-verification", {
   windowMs: 60 * 60 * 1000,
@@ -13,6 +15,7 @@ const resendLimiter = createLimiter("resend-verification", {
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
+  if (!requireSameOrigin(req, res)) return;
   const session = await getServerSession(req, res, authOptions);
   if (!session?.user?.id) return res.status(401).end();
 
@@ -36,7 +39,7 @@ export default async function handler(req, res) {
   });
 
   try {
-    await sendVerificationEmail(user.email, `${process.env.NEXTAUTH_URL}/verify-email?token=${token}`);
+    await sendVerificationEmail(user.email, `${getBaseUrl()}/verify-email?token=${token}`);
   } catch (err) {
     console.error("Failed to send verification email:", err);
     Sentry.captureException(err);

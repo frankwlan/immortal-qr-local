@@ -6,6 +6,14 @@ import TurnstileWidget from "../components/TurnstileWidget";
 
 const TURNSTILE_ENABLED = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
 
+// NextAuth redirects back to /login?error=<code> when sign-in fails; without
+// this a wrong password just reloads the page with no explanation.
+const ERROR_MESSAGES = {
+  CredentialsSignin: "Incorrect email or password.",
+  RateLimited: "Too many sign-in attempts. Please wait a few minutes and try again.",
+  SessionRequired: "Please sign in to continue.",
+};
+
 export default function Login() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -22,6 +30,14 @@ export default function Login() {
   useEffect(() => {
     if (router.query.mode === "register") setMode("register");
   }, [router.query.mode]);
+
+  const errorCode = typeof router.query.error === "string" ? router.query.error : "";
+  const notice =
+    router.query.message === "password-changed"
+      ? "Your password was changed. Please sign in again."
+      : errorCode
+        ? ERROR_MESSAGES[errorCode] || "Something went wrong signing in. Please try again."
+        : "";
 
   const onSubmit = async (e) => {
     e.preventDefault();
@@ -68,6 +84,15 @@ export default function Login() {
         <p style={{ marginBottom: 28 }}>
           {mode === "login" ? "Welcome back." : "Takes about a minute."}
         </p>
+
+        {notice && (
+          <p
+            role={errorCode ? "alert" : "status"}
+            style={{ marginBottom: 16, color: errorCode ? "var(--danger)" : "var(--ink-soft)" }}
+          >
+            {notice}
+          </p>
+        )}
 
         <form onSubmit={onSubmit}>
           {mode === "register" && (

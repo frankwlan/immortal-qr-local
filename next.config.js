@@ -3,6 +3,22 @@ const { withSentryConfig } = require("@sentry/nextjs/config");
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: [
+          // Never let another site embed ImmortalQR in a frame (clickjacking).
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          // Reset and verification tokens travel in URLs; keep them out of
+          // Referer headers sent to other sites.
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+        ],
+      },
+    ];
+  },
   async rewrites() {
     return [
       // Shorter public path for QR-encoded URLs; the API route is the

@@ -1,10 +1,13 @@
-import { createHash } from "crypto";
+import { createHmac } from "crypto";
 import * as Sentry from "@sentry/nextjs";
 import prisma from "./prisma";
 
+// Keyed (HMAC) rather than a plain hash: the IPv4 address space is small
+// enough that unsalted hashes can be reversed by trying every address, but
+// that doesn't work without the server-side secret.
 export function hashIp(ip) {
   if (!ip || ip === "unknown") return null;
-  return createHash("sha256").update(ip).digest("hex");
+  return createHmac("sha256", process.env.NEXTAUTH_SECRET || "").update(ip).digest("hex");
 }
 
 // Logs a scan without throwing — a failed analytics write should never
