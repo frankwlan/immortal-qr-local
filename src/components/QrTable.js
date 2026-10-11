@@ -45,7 +45,7 @@ export default function QrTable({ items, onChange }) {
             <Row key={it.id} it={it} onDelete={handleDelete} onEdit={() => { setEditing(it.id); setEditUrl(it.destination); }} />
           ))}
           {items.length === 0 && (
-            <tr><td colSpan={5} style={{ color: "var(--ink-faint)" }}>No links yet. Create your first one above.</td></tr>
+            <tr><td colSpan={5} style={{ color: "var(--text-faint)" }}>No links yet. Create your first one above.</td></tr>
           )}
         </tbody>
       </table>
@@ -89,7 +89,7 @@ function Row({ it, onDelete, onEdit }) {
       <td>
         <div>{it.scanCount ?? 0} scan{it.scanCount === 1 ? "" : "s"}</div>
         {it.lastScannedAt && (
-          <div style={{ fontSize: "0.8em", color: "var(--ink-faint)" }}>
+          <div style={{ fontSize: "0.8em", color: "var(--text-faint)" }}>
             last {new Date(it.lastScannedAt).toLocaleDateString()}
           </div>
         )}

@@ -24,7 +24,9 @@ export default function Home() {
     <main className="page">
       <header className="site-header">
         <div className="container site-header-inner">
-          <span className="wordmark">ImmortalQR</span>
+          <span className="wordmark">
+            Immortal<span className="text-gradient">QR</span>
+          </span>
           {session ? (
             <Link href="/dashboard" className="btn btn-outline">
               Go to dashboard
@@ -40,7 +42,9 @@ export default function Home() {
       <section className="hero">
         <div className="container hero-grid">
           <div className="hero-copy">
-            <h1>Print once. Redirect forever.</h1>
+            <h1>
+              Print once. <span className="text-gradient">Live forever.</span>
+            </h1>
             <p style={{ fontSize: "1.1rem" }}>
               ImmortalQR gives you a QR code whose destination you control.
               Change where it points anytime — without reprinting a single

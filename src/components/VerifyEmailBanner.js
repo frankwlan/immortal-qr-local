@@ -17,12 +17,12 @@ export default function VerifyEmailBanner({ email }) {
   };
 
   return (
-    <div style={{ background: "var(--paper-raised)", borderBottom: "1px solid var(--line)" }}>
+    <div style={{ background: "var(--surface)", borderBottom: "1px solid var(--line)" }}>
       <div
         className="container"
         style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", padding: "12px 24px" }}
       >
-        <span style={{ color: "var(--ink)", fontSize: "0.9rem" }}>
+        <span style={{ color: "var(--text)", fontSize: "0.9rem" }}>
           {state === "sent"
             ? `Verification email sent to ${email}. Check your inbox.`
             : `Please verify your email. We sent a link to ${email}.`}
