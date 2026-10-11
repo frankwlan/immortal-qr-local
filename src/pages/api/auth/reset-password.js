@@ -29,6 +29,10 @@ export default async function handler(req, res) {
       passwordHash,
       resetTokenHash: null,
       resetTokenExpires: null,
+      // Invalidates every existing session for this user (see the jwt
+      // callback in lib/authOptions.js), so anyone who was signed in with
+      // the old password is logged out on their next request.
+      sessionVersion: { increment: 1 },
     },
   });
 

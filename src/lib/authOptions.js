@@ -39,25 +39,39 @@ export const authOptions = {
       if (user) {
         token.id = user.id;
         token.emailVerified = Boolean(user.emailVerified);
+        token.sessionVersion = user.sessionVersion ?? 0;
+        return token;
+      }
+
+      if (!token.id) return token;
+
+      // JWT sessions have no server-side record to delete, so revocation
+      // works by comparing the sessionVersion baked into this token against
+      // the user's current one. A password reset bumps the DB value, which
+      // makes every token issued before it fail here. Throwing (rather than
+      // returning null) is what NextAuth v4 needs to clear the cookie:
+      // useSession() then reports "unauthenticated" and getServerSession()
+      // returns null, so API routes reject the request too.
+      // Tokens issued before this field existed count as version 0, so
+      // deploying this doesn't log anyone out.
+      const dbUser = await prisma.user.findUnique({
+        where: { id: token.id },
+        select: { name: true, email: true, emailVerified: true, sessionVersion: true },
+      });
+      if (!dbUser || dbUser.sessionVersion !== (token.sessionVersion ?? 0)) {
+        throw new Error("Session revoked");
       }
 
       // The settings page calls useSession().update() after a successful
       // profile save. Without this, the JWT (and therefore the session)
       // would keep showing the old name/email until the next full login.
-      // Also re-check whenever the token still says "unverified": a user can
+      // Also refresh whenever the token still says "unverified": a user can
       // verify in another tab/browser, or a client-side refresh can no-op,
       // and this lets the stale JWT heal itself on the next session fetch.
-      // Only unverified users pay for the extra query.
-      if (token.id && (trigger === "update" || !token.emailVerified)) {
-        const dbUser = await prisma.user.findUnique({
-          where: { id: token.id },
-          select: { name: true, email: true, emailVerified: true },
-        });
-        if (dbUser) {
-          token.name = dbUser.name;
-          token.email = dbUser.email;
-          token.emailVerified = Boolean(dbUser.emailVerified);
-        }
+      if (trigger === "update" || !token.emailVerified) {
+        token.name = dbUser.name;
+        token.email = dbUser.email;
+        token.emailVerified = Boolean(dbUser.emailVerified);
       }
       return token;
     },
