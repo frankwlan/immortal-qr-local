@@ -85,6 +85,11 @@ function Row({ it, onDelete, onEdit }) {
       <td><code>{it.slug}</code></td>
       <td style={{ maxWidth: 380, wordBreak: "break-all" }}>
         <a href={redirectUrl} target="_blank" rel="noreferrer">{it.destination}</a>
+        {it.disabledAt && (
+          <div style={{ fontSize: "0.8em", color: "var(--danger)" }}>
+            Disabled for violating our Terms of Service
+          </div>
+        )}
       </td>
       <td>
         <div>{it.scanCount ?? 0} scan{it.scanCount === 1 ? "" : "s"}</div>

@@ -3,7 +3,7 @@ import { authOptions } from "../../../lib/authOptions";
 import prisma from "../../../lib/prisma";
 import { normalizeDestination } from "../../../lib/url";
 import { requireSameOrigin } from "../../../lib/sameOrigin";
-import { randomUUID } from "crypto";
+import { generateSlug } from "../../../lib/slug";
 import { createLimiter } from "../../../lib/rateLimit";
 
 const CREATE_WINDOW_MS = 60 * 60 * 1000;
@@ -27,6 +27,20 @@ export default async function handler(req, res) {
     return res.status(429).json({ error: "Too many QR codes created recently. Try again later." });
   }
 
+  // Verified email required: anonymous throwaway accounts are how redirect
+  // services get abused for phishing. Read from the database, not the
+  // session, so a user who just verified isn't blocked by a stale token.
+  const account = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { emailVerified: true },
+  });
+  if (!account?.emailVerified) {
+    return res.status(403).json({
+      error: "Please verify your email address before creating QR codes. Check your inbox for the link, or resend it from the banner above.",
+      code: "EMAIL_NOT_VERIFIED",
+    });
+  }
+
   const normalized = normalizeDestination((req.body || {}).destination);
   if (normalized.error) return res.status(400).json({ error: normalized.error });
   const destination = normalized.url;
@@ -40,8 +54,7 @@ export default async function handler(req, res) {
 
   const MAX_ATTEMPTS = 5;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    // Basic slug generation using UUID (can switch to nanoid)
-    const slug = randomUUID().slice(0, 8);
+    const slug = generateSlug();
     try {
       const record = await prisma.qrLink.create({
         data: {

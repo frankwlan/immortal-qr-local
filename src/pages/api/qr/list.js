@@ -13,6 +13,7 @@ export default async function handler(req, res) {
       id: true,
       slug: true,
       destination: true,
+      disabledAt: true,
       createdAt: true,
       _count: { select: { scans: true } },
     },

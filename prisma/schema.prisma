@@ -42,9 +42,14 @@ model QrLink {
   destination String
   slug        String   @unique
   deletedAt   DateTime?
+  // Set by an admin (via SQL) to switch a link off without deleting it —
+  // e.g. after an abuse report. Disabled links return 410 instead of
+  // redirecting, and the owner can't edit them.
+  disabledAt  DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   scans       ScanEvent[]
+  reports     AbuseReport[]
 
   @@index([userId, deletedAt])
 }
@@ -63,6 +68,24 @@ model ScanEvent {
   userAgent  String?
 
   @@index([qrLinkId, scannedAt])
+}
+
+// Reports submitted through the public /report page. qrLinkId is nullable
+// (and cleared if the link is ever removed) because reporters can paste codes
+// that don't exist, and reports should outlive the links they describe.
+model AbuseReport {
+  id            String   @id @default(cuid())
+  qrLinkId      String?
+  qrLink        QrLink?  @relation(fields: [qrLinkId], references: [id], onDelete: SetNull)
+  code          String
+  reason        String
+  details       String?
+  reporterEmail String?
+  status        String   @default("open")
+  createdAt     DateTime @default(now())
+
+  @@index([qrLinkId])
+  @@index([status, createdAt])
 }
 
 // --- NextAuth models ---

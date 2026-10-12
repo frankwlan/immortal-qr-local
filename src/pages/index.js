@@ -93,6 +93,7 @@ export default function Home() {
           <div className="site-footer-links">
             <Link href="/terms">Terms</Link>
             <Link href="/privacy">Privacy</Link>
+            <Link href="/report">Report a link</Link>
           </div>
         </div>
       </footer>

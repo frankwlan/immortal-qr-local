@@ -1,5 +1,6 @@
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
+import * as Sentry from "@sentry/nextjs";
 
 // Shared rate limiting via Upstash Redis when configured — this is what
 // actually works across Vercel's serverless instances, unlike the old
@@ -11,6 +12,12 @@ const redis =
     ? new Redis({
         url: process.env.UPSTASH_REDIS_REST_URL,
         token: process.env.UPSTASH_REDIS_REST_TOKEN,
+        // Fail fast. The client's default is several retries with growing
+        // delays, which would stall every request for seconds during an
+        // outage; a limiter that can't answer within a moment is skipped
+        // instead (see failOpen below).
+        retry: false,
+        signal: () => AbortSignal.timeout(1500),
       })
     : null;
 
@@ -42,6 +49,13 @@ function memoryCheck(key, windowMs, max) {
   return { allowed: true };
 }
 
+function memoryPeek(key, windowMs, max) {
+  const bucket = buckets.get(key);
+  const now = Date.now();
+  if (!bucket || now - bucket.start > windowMs || bucket.count < max) return { allowed: true };
+  return { allowed: false, retryAfterMs: windowMs - (now - bucket.start) };
+}
+
 /**
  * Creates a named limiter. Call .check(key) to test-and-consume one
  * request against it. Create one per call site, at module scope (not
@@ -61,13 +75,41 @@ export function createLimiter(name, { windowMs, max }) {
       })
     : null;
 
+  // If Upstash itself is down, limits are skipped (with an error report)
+  // rather than throwing: a Redis outage must not take down sign-in or,
+  // above all, the public QR redirects.
+  function failOpen(err) {
+    console.error(`Rate limiter "${name}" unavailable; allowing request:`, err);
+    Sentry.captureException(err, { level: "warning" });
+    return { allowed: true };
+  }
+
   return {
+    // Counts this request against the limit and reports whether it's allowed.
     async check(key) {
       if (upstash) {
-        const { success, reset } = await upstash.limit(key);
-        return success ? { allowed: true } : { allowed: false, retryAfterMs: Math.max(0, reset - Date.now()) };
+        try {
+          const { success, reset } = await upstash.limit(key);
+          return success ? { allowed: true } : { allowed: false, retryAfterMs: Math.max(0, reset - Date.now()) };
+        } catch (err) {
+          return failOpen(err);
+        }
       }
       return memoryCheck(`${name}:${key}`, windowMs, max);
+    },
+    // Reports whether the limit is already used up WITHOUT counting this
+    // request — for limits that should only count certain outcomes (e.g.
+    // failed lookups), where the count is added later with check().
+    async peek(key) {
+      if (upstash) {
+        try {
+          const { remaining, reset } = await upstash.getRemaining(key);
+          return remaining > 0 ? { allowed: true } : { allowed: false, retryAfterMs: Math.max(0, reset - Date.now()) };
+        } catch (err) {
+          return failOpen(err);
+        }
+      }
+      return memoryPeek(`${name}:${key}`, windowMs, max);
     },
   };
 }

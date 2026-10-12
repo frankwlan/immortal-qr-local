@@ -20,6 +20,10 @@ export default function Privacy() {
       <ul>
         <li>Account info: name, email address, and a hashed password (we never store your password itself)</li>
         <li>QR link data: the destination URLs you create and their generated slugs</li>
+        <li>
+          Abuse reports: if you report a link, we store the code you reported,
+          your explanation, and your email address if you choose to give one
+        </li>
         <li>Basic server logs (e.g. IP address) used for rate-limiting and abuse prevention</li>
         <li>
           Scan activity: when someone scans one of your QR codes, we record
