@@ -3,6 +3,8 @@ import { compare } from "bcryptjs";
 import * as Sentry from "@sentry/nextjs";
 import prisma from "../lib/prisma";
 import { createLimiter, getClientIp } from "./rateLimit";
+import { sendAccountRestoredNotice } from "./email";
+import { isRestorable } from "./retention";
 
 // Sign-in is the one endpoint where guessing passwords is the whole attack,
 // so it gets two independent limits: per IP (stops one machine trying many
@@ -51,7 +53,33 @@ export const authOptions = {
 
         const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
         const ok = await compare(password, user?.passwordHash || DUMMY_HASH);
-        return user && user.passwordHash && ok ? user : null;
+        if (!user || !user.passwordHash || !ok) return null;
+
+        // Signing in to a deleted account (within the restore window) undoes the deletion. Only a correct
+        // password gets here, and the owner is emailed so a restore they
+        // didn't do themselves doesn't go unnoticed. Links are brought back
+        // by matching the deletion timestamp, so ones the user had deleted
+        // individually beforehand stay deleted.
+        if (user.deletedAt) {
+          // Past the restore window the account is only waiting for the
+          // purge job; it must not be revivable in that gap.
+          if (!isRestorable(user.deletedAt)) return null;
+          const [restored] = await prisma.$transaction([
+            prisma.user.update({ where: { id: user.id }, data: { deletedAt: null } }),
+            prisma.qrLink.updateMany({
+              where: { userId: user.id, deletedAt: user.deletedAt },
+              data: { deletedAt: null },
+            }),
+          ]);
+          try {
+            await sendAccountRestoredNotice(user.email);
+          } catch (err) {
+            console.error("Failed to send account-restored notice:", err);
+            Sentry.captureException(err);
+          }
+          return restored;
+        }
+        return user;
       },
     }),
   ],
@@ -93,14 +121,14 @@ export const authOptions = {
       try {
         dbUser = await prisma.user.findUnique({
           where: { id: token.id },
-          select: { name: true, email: true, emailVerified: true, sessionVersion: true },
+          select: { name: true, email: true, emailVerified: true, sessionVersion: true, deletedAt: true },
         });
       } catch (err) {
         console.error("Session check failed; keeping existing session:", err);
         Sentry.captureException(err);
         return token;
       }
-      if (!dbUser || dbUser.sessionVersion !== (token.sessionVersion ?? 0)) {
+      if (!dbUser || dbUser.deletedAt || dbUser.sessionVersion !== (token.sessionVersion ?? 0)) {
         throw new Error("Session revoked");
       }
 

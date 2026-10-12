@@ -35,9 +35,13 @@ export default function Login() {
   const notice =
     router.query.message === "password-changed"
       ? "Your password was changed. Please sign in again."
-      : errorCode
-        ? ERROR_MESSAGES[errorCode] || "Something went wrong signing in. Please try again."
-        : "";
+      : router.query.message === "account-deleted"
+        ? "Your account has been deleted and your QR codes no longer work. Sign in within 30 days to restore them; after that everything is permanently erased."
+        : router.query.message === "account-erased"
+          ? "Your account and all of its data have been permanently erased."
+          : errorCode
+            ? ERROR_MESSAGES[errorCode] || "Something went wrong signing in. Please try again."
+            : "";
 
   const onSubmit = async (e) => {
     e.preventDefault();
