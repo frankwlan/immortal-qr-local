@@ -35,7 +35,11 @@ export default function Terms() {
         <li>Phishing, malware, or scam destinations</li>
         <li>Content that harasses, defames, or infringes on others&apos; rights</li>
       </ul>
-      <p>We may disable links or accounts that violate this.</p>
+      <p>
+        We may disable links or accounts that violate this. Anyone can{" "}
+        <Link href="/report">report a link</Link> they believe breaks these
+        rules, and we require a verified email address to create QR codes.
+      </p>
 
       <h2>4. Availability</h2>
       <p>

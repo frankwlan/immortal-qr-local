@@ -43,6 +43,26 @@ export async function sendEmailChangedNotice(to, newEmail) {
   });
 }
 
+export async function sendAbuseReportNotice(to, report) {
+  if (!resend) {
+    console.log(`[email:dev] Abuse report (${report.reason}) for ${report.code}: ${report.details || "no details"}`);
+    return;
+  }
+
+  await resend.emails.send({
+    from: FROM,
+    to,
+    subject: `Abuse report: ${report.reason}`,
+    html: `
+      <p><strong>Reason:</strong> ${escapeHtml(report.reason)}</p>
+      <p><strong>Reported:</strong> ${escapeHtml(report.code)} ${report.matchedLink ? "(matches a link)" : "(no matching link)"}</p>
+      <p><strong>Details:</strong> ${escapeHtml(report.details || "—")}</p>
+      <p><strong>Reporter:</strong> ${escapeHtml(report.reporterEmail || "anonymous")}</p>
+      <p>Report id: ${escapeHtml(report.id)}</p>
+    `,
+  });
+}
+
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
