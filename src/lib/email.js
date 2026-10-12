@@ -26,6 +26,27 @@ export async function sendPasswordResetEmail(to, resetUrl) {
   });
 }
 
+export async function sendEmailChangedNotice(to, newEmail) {
+  if (!resend) {
+    console.log(`[email:dev] Email-change notice to ${to}: account email changed to ${newEmail}`);
+    return;
+  }
+
+  await resend.emails.send({
+    from: FROM,
+    to,
+    subject: "Your ImmortalQR email address was changed",
+    html: `
+      <p>The email address on your ImmortalQR account was just changed to <strong>${escapeHtml(newEmail)}</strong>.</p>
+      <p>If this was you, no action is needed. If it wasn't, reset your password right away using the "Forgot password?" link on the sign-in page.</p>
+    `,
+  });
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
 export async function sendVerificationEmail(to, verifyUrl) {
   if (!resend) {
     console.log(`[email:dev] Email verification link for ${to}: ${verifyUrl}`);

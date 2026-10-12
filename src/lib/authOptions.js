@@ -1,6 +1,23 @@
 import Credentials from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
+import * as Sentry from "@sentry/nextjs";
 import prisma from "../lib/prisma";
+import { createLimiter, getClientIp } from "./rateLimit";
+
+// Sign-in is the one endpoint where guessing passwords is the whole attack,
+// so it gets two independent limits: per IP (stops one machine trying many
+// accounts) and per email (stops many machines hammering one account).
+// Both count every attempt, so a determined attacker can briefly lock a
+// victim out of sign-in; password reset still works, and that's the safer
+// failure than unlimited guessing.
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const loginIpLimiter = createLimiter("login-ip", { windowMs: LOGIN_WINDOW_MS, max: 30 });
+const loginEmailLimiter = createLimiter("login-email", { windowMs: LOGIN_WINDOW_MS, max: 10 });
+
+// A real bcrypt hash of a throwaway string. Comparing against it when the
+// account doesn't exist keeps response time about the same either way, so
+// timing can't be used to find out which emails are registered.
+const DUMMY_HASH = "$2a$10$9ZLQ6hhhV6hzcQuKib5i2eomio1J8yvXXEa4IEARny1RbF1PRuhui";
 
 // NOTE: Google/GitHub OAuth are intentionally left out for now. With JWT
 // sessions and no database adapter configured, an OAuth sign-in would never
@@ -19,19 +36,31 @@ export const authOptions = {
         email: { label: "Email", type: "text" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, req) {
         const { email, password } = credentials || {};
-        if (!email || !password) return null;
-        const normalizedEmail = email.trim().toLowerCase();
+        if (typeof email !== "string" || typeof password !== "string" || !email || !password) return null;
+        const normalizedEmail = email.trim().toLowerCase().slice(0, 254);
+
+        const [byIp, byEmail] = await Promise.all([
+          loginIpLimiter.check(getClientIp(req || { headers: {} })),
+          loginEmailLimiter.check(normalizedEmail),
+        ]);
+        // Throwing (rather than returning null) lets the login page show a
+        // specific message: NextAuth redirects to /login?error=RateLimited.
+        if (!byIp.allowed || !byEmail.allowed) throw new Error("RateLimited");
+
         const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
-        if (!user || !user.passwordHash) return null;
-        const ok = await compare(password, user.passwordHash);
-        return ok ? user : null;
+        const ok = await compare(password, user?.passwordHash || DUMMY_HASH);
+        return user && user.passwordHash && ok ? user : null;
       },
     }),
   ],
   pages: {
     signIn: "/login",
+    // Errors thrown from authorize() (like "RateLimited") are redirected to
+    // this page as ?error=<message>. Without it, NextAuth would show its own
+    // generic error screen instead of our login page.
+    error: "/login",
   },
   callbacks: {
     async jwt({ token, user, trigger }) {
@@ -54,10 +83,23 @@ export const authOptions = {
       // returns null, so API routes reject the request too.
       // Tokens issued before this field existed count as version 0, so
       // deploying this doesn't log anyone out.
-      const dbUser = await prisma.user.findUnique({
-        where: { id: token.id },
-        select: { name: true, email: true, emailVerified: true, sessionVersion: true },
-      });
+      //
+      // A database failure is NOT a revocation: any error thrown from this
+      // callback clears the session cookie, so a brief Neon timeout would
+      // sign every active user out. On infrastructure errors we keep the
+      // token as-is instead (revocations take effect again once the
+      // database is reachable).
+      let dbUser;
+      try {
+        dbUser = await prisma.user.findUnique({
+          where: { id: token.id },
+          select: { name: true, email: true, emailVerified: true, sessionVersion: true },
+        });
+      } catch (err) {
+        console.error("Session check failed; keeping existing session:", err);
+        Sentry.captureException(err);
+        return token;
+      }
       if (!dbUser || dbUser.sessionVersion !== (token.sessionVersion ?? 0)) {
         throw new Error("Session revoked");
       }
