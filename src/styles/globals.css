@@ -1,86 +1,134 @@
 /* ImmortalQR design tokens.
-   Concept: ink-on-paper permanence — the code is printed once, the
-   destination can change forever. Paper white + near-black ink, with a
-   single antique-brass accent reserved for dividers, focus states, and
-   the hero graphic (kept out of button text to protect contrast). */
+   Concept: the brand mark — an infinity sign drawn out of QR modules,
+   glowing on a deep night-navy field. One violet → blue → cyan gradient
+   carries the brand; it's used for the primary button, the hero art,
+   accents and focus states. Text stays on solid colors so contrast is
+   predictable (all text pairs below clear WCAG AA 4.5:1). */
 
 :root {
-  --paper: #f6f7f5;
-  --paper-raised: #ffffff;
-  --ink: #15181c;
-  --ink-soft: #4a4f57;
-  --ink-faint: #676b72; /* darkened from an earlier #8a8f97 to clear 4.5:1 on --paper for small text */
-  --brass: #b8862b;
-  --brass-soft: #e4c98a;
-  --line: #dddfda;
-  --danger: #a4342f;
+  color-scheme: dark;
 
-  --font-display: "Fraunces", Georgia, "Times New Roman", serif;
-  --font-body: "Work Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* Surfaces */
+  --bg: #0a0e1c;
+  --bg-glow: #25205e;
+  --surface: #121833;
+  --surface-raised: #182046;
+  --line: #262e52;
+  --line-strong: #3a4470;
 
-  --radius: 4px;
-  --container-width: 1040px;
+  /* Text */
+  --text: #f1f5f9;
+  --text-soft: #cbd5e1;
+  --text-faint: #94a3b8;
+  --on-accent: #0a0e1c; /* text on top of the gradient */
+
+  /* Brand */
+  --violet: #c4b5fd;
+  --blue: #60a5fa;
+  --cyan: #22d3ee;
+  --grad: linear-gradient(90deg, var(--violet), var(--blue) 50%, var(--cyan));
+  --focus: var(--cyan);
+
+  --danger: #f87171;
+
+  --font-display: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+  --radius: 8px;
+  --container-width: 1080px;
 }
 
 * {
   box-sizing: border-box;
 }
 
+html {
+  background: var(--bg);
+}
+
 html,
 body {
   margin: 0;
   padding: 0;
-  background: var(--paper);
-  color: var(--ink);
+  color: var(--text);
   font-family: var(--font-body);
   font-size: 16px;
-  line-height: 1.5;
+  line-height: 1.55;
   min-height: 100%;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* A soft indigo glow in the top corner, echoing the logo's background */
+body {
+  background:
+    radial-gradient(1100px 620px at 85% -12%, rgba(37, 32, 94, 0.9), transparent 62%),
+    radial-gradient(700px 500px at -10% 110%, rgba(34, 211, 238, 0.06), transparent 60%),
+    var(--bg);
+}
+
+::selection {
+  background: rgba(96, 165, 250, 0.35);
+  color: var(--text);
 }
 
 h1,
 h2,
 h3 {
   font-family: var(--font-display);
-  font-weight: 600;
-  line-height: 1.15;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
   margin: 0 0 0.5em;
-  color: var(--ink);
+  color: var(--text);
 }
 
 h1 {
-  font-size: clamp(2.2rem, 4vw, 3.4rem);
+  font-size: clamp(2.3rem, 4.4vw, 3.6rem);
 }
 
 h2 {
   font-size: clamp(1.5rem, 2.4vw, 2rem);
 }
 
+h3 {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
 p {
   margin: 0 0 1em;
   max-width: 62ch;
-  color: var(--ink-soft);
+  color: var(--text-soft);
 }
 
 a {
-  color: var(--ink);
-  text-decoration-color: var(--brass);
+  color: var(--text);
+  text-decoration-color: var(--blue);
   text-decoration-thickness: 1.5px;
   text-underline-offset: 3px;
 }
 
 a:hover {
-  color: var(--ink);
-  text-decoration-color: var(--ink);
+  color: var(--cyan);
+  text-decoration-color: var(--cyan);
 }
 
 code {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  background: var(--paper-raised);
+  background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 3px;
+  border-radius: 4px;
   padding: 1px 5px;
   font-size: 0.9em;
+  color: var(--text);
+}
+
+/* Gradient text — for short display phrases only (e.g. "Live forever.") */
+.text-gradient {
+  background: var(--grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 /* Focus states — visible everywhere, never suppressed */
@@ -88,7 +136,7 @@ a:focus-visible,
 button:focus-visible,
 input:focus-visible,
 [tabindex]:focus-visible {
-  outline: 2px solid var(--brass);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -105,14 +153,19 @@ input:focus-visible,
   flex-direction: column;
 }
 
+/* In the column-flex page, auto margins would shrink-wrap the container */
+.page > .container {
+  width: 100%;
+}
+
 .hairline {
   border: none;
   border-top: 1px solid var(--line);
   margin: 0;
 }
 
-/* Buttons — ink-filled primary (stamped look), outlined secondary.
-   Brass is never used as button text color, to keep contrast safe. */
+/* Buttons — gradient-filled primary, outlined secondary.
+   Gradient buttons always use dark text (--on-accent) for contrast. */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -121,11 +174,14 @@ input:focus-visible,
   font-family: var(--font-body);
   font-size: 0.95rem;
   font-weight: 600;
-  padding: 11px 22px;
+  padding: 12px 22px;
   border-radius: var(--radius);
-  border: 1.5px solid var(--ink);
+  border: 1.5px solid var(--line-strong);
+  background: transparent;
+  color: var(--text);
   cursor: pointer;
-  transition: transform 0.15s ease, opacity 0.15s ease;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, background-color 0.15s ease,
+    border-color 0.15s ease, filter 0.15s ease;
   text-decoration: none;
   line-height: 1;
 }
@@ -135,34 +191,44 @@ input:focus-visible,
 }
 
 .btn-primary {
-  background: var(--ink);
-  color: var(--paper);
+  background: var(--grad);
+  border-color: transparent;
+  color: var(--on-accent);
 }
 
 .btn-primary:hover {
-  opacity: 0.88;
+  color: var(--on-accent);
+  filter: brightness(1.08);
+  box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.35), 0 8px 28px -6px rgba(96, 165, 250, 0.55);
 }
 
 .btn-outline {
   background: transparent;
-  color: var(--ink);
+  color: var(--text);
 }
 
 .btn-outline:hover {
-  background: var(--paper-raised);
+  color: var(--text);
+  background: var(--surface);
+  border-color: var(--blue);
 }
 
 .btn-text {
   background: none;
   border: none;
   padding: 0;
-  color: var(--ink);
+  color: var(--text);
   text-decoration: underline;
-  text-decoration-color: var(--brass);
+  text-decoration-color: var(--blue);
   text-underline-offset: 3px;
   cursor: pointer;
   font: inherit;
   font-weight: 600;
+}
+
+.btn-text:hover {
+  color: var(--cyan);
+  text-decoration-color: var(--cyan);
 }
 
 .btn-full {
@@ -170,7 +236,7 @@ input:focus-visible,
 }
 
 .btn-sm {
-  padding: 6px 14px;
+  padding: 7px 14px;
   font-size: 0.85rem;
 }
 
@@ -181,12 +247,15 @@ input:focus-visible,
 
 .btn-danger:hover {
   background: var(--danger);
-  color: var(--paper);
+  border-color: var(--danger);
+  color: var(--on-accent);
 }
 
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  filter: none;
+  box-shadow: none;
 }
 
 /* Form fields */
@@ -200,30 +269,45 @@ input:focus-visible,
 .field label {
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--ink-soft);
+  color: var(--text-soft);
 }
 
 .input {
   font-family: var(--font-body);
   font-size: 1rem;
-  padding: 10px 12px;
+  padding: 11px 13px;
   border: 1.5px solid var(--line);
   border-radius: var(--radius);
-  background: var(--paper-raised);
-  color: var(--ink);
+  background: var(--surface);
+  color: var(--text);
   width: 100%;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.input::placeholder {
+  color: var(--text-faint);
 }
 
 .input:focus {
   outline: none;
-  border-color: var(--ink);
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.2);
 }
 
-/* Cards used sparingly — flat, hairline-bordered, no shadow kit */
+/* Keep browser autofill from painting a light-yellow box on the dark theme */
+.input:-webkit-autofill,
+.input:-webkit-autofill:hover,
+.input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--text);
+  -webkit-box-shadow: 0 0 0 1000px var(--surface) inset;
+  caret-color: var(--text);
+}
+
+/* Cards — flat surfaces with a hairline border */
 .panel {
-  background: var(--paper-raised);
+  background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: 12px;
   padding: 24px;
 }
 
@@ -236,11 +320,13 @@ table {
 th {
   text-align: left;
   font-family: var(--font-body);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   font-weight: 600;
-  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
   padding: 10px 8px;
-  border-bottom: 1.5px solid var(--ink);
+  border-bottom: 1.5px solid var(--line-strong);
 }
 
 td {
@@ -249,8 +335,14 @@ td {
   vertical-align: middle;
 }
 
+/* QR previews keep their white quiet zone (scanners need it) */
+td img {
+  display: block;
+  border-radius: 6px;
+}
+
 tr:hover td {
-  background: var(--paper-raised);
+  background: rgba(18, 24, 51, 0.7);
 }
 
 /* Landing page */
@@ -262,19 +354,25 @@ tr:hover td {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 0;
+  padding-top: 20px;
+  padding-bottom: 20px;
 }
 
 .wordmark {
   font-family: var(--font-display);
   font-size: 1.3rem;
-  font-weight: 600;
+  font-weight: 800;
+  letter-spacing: -0.02em;
   text-decoration: none;
-  color: var(--ink);
+  color: var(--text);
+}
+
+.wordmark:hover {
+  color: var(--text);
 }
 
 .hero {
-  padding: 72px 0 88px;
+  padding: 80px 0 96px;
 }
 
 .hero-grid {
@@ -290,6 +388,7 @@ tr:hover td {
 .hero-art {
   flex: 0 0 auto;
   margin-left: auto;
+  filter: drop-shadow(0 0 36px rgba(96, 165, 250, 0.28));
 }
 
 .hero-actions {
@@ -300,7 +399,7 @@ tr:hover td {
 }
 
 .features {
-  padding: 56px 0 80px;
+  padding: 64px 0 88px;
   border-top: 1px solid var(--line);
 }
 
@@ -311,12 +410,13 @@ tr:hover td {
   margin-top: 36px;
 }
 
+/* Short gradient rule above each feature title */
 .feature h3 {
   font-size: 1.1rem;
   font-family: var(--font-body);
-  font-weight: 600;
-  border-top: 2px solid var(--brass);
-  padding-top: 14px;
+  font-weight: 700;
+  padding-top: 16px;
+  background: var(--grad) top left / 48px 2px no-repeat;
 }
 
 .site-footer {
@@ -332,7 +432,7 @@ tr:hover td {
   flex-wrap: wrap;
   gap: 12px;
   font-size: 0.85rem;
-  color: var(--ink-faint);
+  color: var(--text-faint);
 }
 
 .site-footer-links {
@@ -341,12 +441,25 @@ tr:hover td {
 }
 
 @media (max-width: 760px) {
+  .hero {
+    padding: 56px 0 72px;
+  }
   .hero-grid {
     flex-direction: column;
     align-items: flex-start;
+    gap: 48px;
+  }
+  .hero-copy {
+    flex: none;
   }
   .hero-art {
     margin-left: 0;
+    width: 100%;
+    max-width: 320px;
+  }
+  .hero-art svg {
+    width: 100%;
+    height: auto;
   }
   .features-grid {
     grid-template-columns: 1fr;

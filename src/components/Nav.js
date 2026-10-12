@@ -15,12 +15,13 @@ export default function Nav({ userLabel }) {
       >
         <Link
           href="/dashboard"
-          style={{ fontFamily: "var(--font-display)", fontSize: "1.25rem", fontWeight: 600, textDecoration: "none" }}
+          className="wordmark"
+          style={{ fontSize: "1.25rem" }}
         >
-          ImmortalQR
+          Immortal<span className="text-gradient">QR</span>
         </Link>
         <nav style={{ display: "flex", alignItems: "center", gap: 20 }}>
-          {userLabel && <span style={{ color: "var(--ink-soft)", fontSize: "0.9rem" }}>{userLabel}</span>}
+          {userLabel && <span style={{ color: "var(--text-soft)", fontSize: "0.9rem" }}>{userLabel}</span>}
           <Link href="/settings">Settings</Link>
           <button type="button" className="btn-text" onClick={() => signOut({ callbackUrl: "/" })}>
             Sign out
