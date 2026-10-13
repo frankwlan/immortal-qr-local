@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/router";
 import QRCode from "qrcode";
 
 export default function QrTable({ items, onChange }) {
@@ -68,6 +70,8 @@ export default function QrTable({ items, onChange }) {
 }
 
 function Row({ it, onDelete, onEdit }) {
+  const router = useRouter();
+  const detailHref = `/dashboard/qr/${it.id}`;
   const redirectUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/r/${it.slug}`;
   const [dataUrl, setDataUrl] = useState("");
 
@@ -79,8 +83,16 @@ function Row({ it, onDelete, onEdit }) {
     return () => { cancelled = true; };
   }, [redirectUrl]);
 
+  // The whole row opens the detail page, except where the click was really
+  // meant for a link or button inside it. "Details" is the keyboard- and
+  // screen-reader-friendly way in.
+  const openDetails = (e) => {
+    if (e.target.closest("a, button, input")) return;
+    router.push(detailHref);
+  };
+
   return (
-    <tr>
+    <tr className="row-link" onClick={openDetails}>
       <td>{dataUrl ? <img src={dataUrl} alt="qr" width={72} height={72} /> : "..."}</td>
       <td><code>{it.slug}</code></td>
       <td style={{ maxWidth: 380, wordBreak: "break-all" }}>
@@ -101,6 +113,7 @@ function Row({ it, onDelete, onEdit }) {
       </td>
       <td>
         <div style={{ display: "flex", gap: 8 }}>
+          <Link href={detailHref} className="btn btn-outline btn-sm">Details</Link>
           <button className="btn btn-outline btn-sm" onClick={onEdit}>Edit</button>
           <button className="btn btn-danger btn-sm" onClick={() => onDelete(it.id)}>Delete</button>
         </div>
