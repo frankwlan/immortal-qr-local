@@ -12,7 +12,7 @@
     "prisma:migrate": "prisma migrate dev"
   },
   "dependencies": {
-    "next": "14.2.35",
+    "next": "15.5.27",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "next-auth": "4.24.15",
@@ -28,7 +28,12 @@
   "devDependencies": {
     "prisma": "5.19.1",
     "eslint": "8.57.0",
-    "eslint-config-next": "14.2.5"
+    "eslint-config-next": "15.5.27"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "8.5.30"
+    }
   },
   "allowScripts": {
     "@prisma/client@5.19.1": true,

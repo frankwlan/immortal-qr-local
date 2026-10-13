@@ -3,6 +3,10 @@ const { withSentryConfig } = require("@sentry/nextjs/config");
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // We don't use next/image (QR codes are generated in the browser), so turn
+  // the built-in image optimizer endpoint off entirely rather than leave an
+  // unused public endpoint exposed. Several Next.js advisories target it.
+  images: { unoptimized: true },
   async headers() {
     return [
       {
