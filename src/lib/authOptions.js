@@ -121,7 +121,15 @@ export const authOptions = {
       try {
         dbUser = await prisma.user.findUnique({
           where: { id: token.id },
-          select: { name: true, email: true, emailVerified: true, sessionVersion: true, deletedAt: true },
+          select: {
+            name: true,
+            email: true,
+            emailVerified: true,
+            sessionVersion: true,
+            deletedAt: true,
+            pendingEmail: true,
+            pendingEmailExpires: true,
+          },
         });
       } catch (err) {
         console.error("Session check failed; keeping existing session:", err);
@@ -138,7 +146,15 @@ export const authOptions = {
       // Also refresh whenever the token still says "unverified": a user can
       // verify in another tab/browser, or a client-side refresh can no-op,
       // and this lets the stale JWT heal itself on the next session fetch.
-      if (trigger === "update" || !token.emailVerified) {
+      // The email can also change without this browser doing anything: the
+      // confirmation link for a pending change may be opened elsewhere. Any
+      // mismatch with the database heals the same way.
+      // A pending change is surfaced (not applied) so Settings can show it.
+      token.pendingEmail =
+        dbUser.pendingEmail && dbUser.pendingEmailExpires && dbUser.pendingEmailExpires > new Date()
+          ? dbUser.pendingEmail
+          : null;
+      if (trigger === "update" || !token.emailVerified || dbUser.email !== token.email) {
         token.name = dbUser.name;
         token.email = dbUser.email;
         token.emailVerified = Boolean(dbUser.emailVerified);
@@ -150,6 +166,7 @@ export const authOptions = {
       if (session?.user && token?.id) {
         session.user.id = token.id;
         session.user.emailVerified = Boolean(token.emailVerified);
+        session.user.pendingEmail = token.pendingEmail || null;
       }
       return session;
     },

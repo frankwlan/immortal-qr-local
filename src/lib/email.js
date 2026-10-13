@@ -137,3 +137,24 @@ export async function sendAccountErasedNotice(to) {
     `,
   });
 }
+
+// Sent to the NEW address of a requested email change. It deliberately
+// doesn't mention the account's current address: if the new one is a typo, it
+// belongs to a stranger who shouldn't learn whose account this is.
+export async function sendEmailChangeConfirmation(to, confirmUrl) {
+  if (!resend) {
+    console.log(`[email:dev] Email change confirmation link for ${to}: ${confirmUrl}`);
+    return;
+  }
+
+  await resend.emails.send({
+    from: FROM,
+    to,
+    subject: "Confirm your new ImmortalQR email",
+    html: `
+      <p>Someone asked to use this address as the email for an ImmortalQR account.</p>
+      <p><a href="${confirmUrl}">Confirm this email address</a></p>
+      <p>This link expires in 24 hours. If you didn't ask for this, ignore this email and nothing will change.</p>
+    `,
+  });
+}
