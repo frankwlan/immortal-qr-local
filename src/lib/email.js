@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import { RESTORE_WINDOW_DAYS } from "./retention";
 
 // If RESEND_API_KEY isn't set (e.g. local dev without email configured),
 // fall back to logging the email to the console instead of throwing. That
@@ -81,6 +82,58 @@ export async function sendVerificationEmail(to, verifyUrl) {
       <p>Welcome to ImmortalQR. Please confirm this is your email address.</p>
       <p><a href="${verifyUrl}">Verify my email</a></p>
       <p>This link expires in 24 hours. If you didn't create an account, you can ignore this email.</p>
+    `,
+  });
+}
+
+export async function sendAccountDeletedNotice(to) {
+  if (!resend) {
+    console.log(`[email:dev] Account deleted notice to ${to}`);
+    return;
+  }
+
+  await resend.emails.send({
+    from: FROM,
+    to,
+    subject: "Your ImmortalQR account has been deleted",
+    html: `
+      <p>Your ImmortalQR account was deleted and your QR codes have stopped redirecting.</p>
+      <p>We'll keep your data for ${RESTORE_WINDOW_DAYS} days in case you change your mind. Sign in again with your password within that time and your account and QR codes will be restored. After ${RESTORE_WINDOW_DAYS} days everything is permanently erased.</p>
+      <p>If you didn't do this, sign in to restore your account and reset your password right away.</p>
+    `,
+  });
+}
+
+export async function sendAccountRestoredNotice(to) {
+  if (!resend) {
+    console.log(`[email:dev] Account restored notice to ${to}`);
+    return;
+  }
+
+  await resend.emails.send({
+    from: FROM,
+    to,
+    subject: "Your ImmortalQR account has been restored",
+    html: `
+      <p>Someone signed in to your deleted ImmortalQR account, so it was restored along with your QR codes.</p>
+      <p>If that was you, welcome back. If it wasn't, reset your password right away.</p>
+    `,
+  });
+}
+
+export async function sendAccountErasedNotice(to) {
+  if (!resend) {
+    console.log(`[email:dev] Account erased notice to ${to}`);
+    return;
+  }
+
+  await resend.emails.send({
+    from: FROM,
+    to,
+    subject: "Your ImmortalQR account has been permanently erased",
+    html: `
+      <p>As you requested, your ImmortalQR account, QR codes and scan history have been permanently erased. This can't be undone.</p>
+      <p>If you didn't do this, please contact the site owner right away.</p>
     `,
   });
 }

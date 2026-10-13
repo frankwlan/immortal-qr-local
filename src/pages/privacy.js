@@ -58,8 +58,16 @@ export default function Privacy() {
       <h2>4. Data retention</h2>
       <p>
         We retain account and link data for as long as your account is
-        active. You can ask us to delete your account and associated data
-        at any time.
+        active. You can delete your account yourself at any time from
+        Settings. Your QR codes stop working immediately and you are signed
+        out everywhere. So that a mistaken or unauthorized deletion can be
+        undone, we keep your data for 30 days; signing in again during that
+        time restores your account and QR codes. After 30 days your account,
+        QR codes and scan history are permanently erased. If you prefer, you
+        can choose to erase everything immediately when you delete your
+        account. Copies may remain for a short time in database backups and in
+        the logs of the services listed above before they are overwritten or
+        expire.
       </p>
 
       <h2>5. Changes</h2>

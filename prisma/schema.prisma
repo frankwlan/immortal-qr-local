@@ -28,11 +28,20 @@ model User {
   sessionVersion    Int       @default(0)
   verifyTokenHash    String?   @unique
   verifyTokenExpires DateTime?
+  // Set when the user deletes their account. The account is deactivated, not
+  // erased: signing in again with the right password clears it (see
+  // authOptions) for RESTORE_WINDOW_DAYS; after that the daily purge job
+  // erases the account for good. Their QR codes are stamped with the same
+  // timestamp so a restore can bring back exactly those, and not ones
+  // deleted earlier.
+  deletedAt         DateTime?
   qrLinks           QrLink[]
   accounts          Account[]
   sessions          Session[]
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
+
+  @@index([deletedAt])
 }
 
 model QrLink {
