@@ -2,17 +2,20 @@
   "name": "immortalqr-mvp",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev"
   },
   "dependencies": {
-    "next": "15.5.27",
+    "next": "16.4.2",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "next-auth": "4.24.15",
@@ -27,13 +30,8 @@
   },
   "devDependencies": {
     "prisma": "5.19.1",
-    "eslint": "8.57.0",
-    "eslint-config-next": "15.5.27"
-  },
-  "overrides": {
-    "next": {
-      "postcss": "8.5.30"
-    }
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.4.2"
   },
   "allowScripts": {
     "@prisma/client@5.19.1": true,
