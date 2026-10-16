@@ -3,14 +3,15 @@ import { authOptions } from "../../../../lib/authOptions";
 import prisma from "../../../../lib/prisma";
 import { createLimiter } from "../../../../lib/rateLimit";
 import { getBaseUrl } from "../../../../lib/baseUrl";
-import { ALLOWED_RANGES, DEFAULT_RANGE, PAGE_SIZE, isValidTimeZone, loadScanPage, loadScanStats } from "../../../../lib/scanStats";
+import { loadScanStats, parseWindow } from "../../../../lib/scanStats";
 
 // The stats queries scan a link's events, so cap how often one user can run
 // them. Generous for a person clicking around, small for a script.
 const detailLimiter = createLimiter("qr-detail", { windowMs: 60 * 1000, max: 60 });
 
 // Everything the detail page needs for one QR code: its basic info, the
-// scan statistics for a date range, and the first page of scan history.
+// scan statistics for a date range. (The scan history table is loaded
+// separately from /scans, so changing its page size doesn't redo the stats.)
 //   ?days=7|30|90   range for the chart and totals (default 30)
 //   ?tz=<IANA zone> the viewer's time zone, so "per day" means their days
 //   ?bots=1         include robots and link-preview fetchers
@@ -37,13 +38,10 @@ export default async function handler(req, res) {
   });
   if (!link) return res.status(404).end();
 
-  const days = ALLOWED_RANGES.includes(Number(req.query.days)) ? Number(req.query.days) : DEFAULT_RANGE;
-  const tz = isValidTimeZone(req.query.tz) ? req.query.tz : "UTC";
-  const includeBots = req.query.bots === "1";
+  const { days, tz, includeBots } = parseWindow(req.query);
 
-  const [stats, firstPage, totalAllTime] = await Promise.all([
+  const [stats, totalAllTime] = await Promise.all([
     loadScanStats(link.id, { days, tz, includeBots }),
-    loadScanPage(link.id, { includeBots, limit: PAGE_SIZE }),
     prisma.scanEvent.count({ where: { qrLinkId: link.id } }),
   ]);
 
@@ -58,6 +56,5 @@ export default async function handler(req, res) {
     },
     totalAllTime,
     stats,
-    scans: firstPage,
   });
 }

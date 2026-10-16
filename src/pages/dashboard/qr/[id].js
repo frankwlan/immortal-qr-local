@@ -6,6 +6,7 @@ import RequireAuth from "../../../components/RequireAuth";
 import Nav from "../../../components/Nav";
 import VerifyEmailBanner from "../../../components/VerifyEmailBanner";
 import ScanChart from "../../../components/ScanChart";
+import ScanHistory from "../../../components/ScanHistory";
 import {
   ERROR_LEVELS,
   PNG_SIZES,
@@ -43,8 +44,6 @@ function QrDetail() {
   const [days, setDays] = useState(30);
   const [bots, setBots] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [scans, setScans] = useState({ items: [], nextCursor: null });
-  const [loadingMore, setLoadingMore] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -61,7 +60,6 @@ function QrDetail() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       setData(json);
-      setScans(json.scans);
       setStatus("ready");
       setMessage("");
     } catch (err) {
@@ -74,21 +72,6 @@ function QrDetail() {
   }, [id, days, bots]);
 
   useEffect(() => { load(); }, [load]);
-
-  const showMore = async () => {
-    if (!scans.nextCursor || loadingMore) return;
-    setLoadingMore(true);
-    const qs = new URLSearchParams({ before: scans.nextCursor.before, beforeId: scans.nextCursor.beforeId, ...(bots ? { bots: "1" } : {}) });
-    try {
-      const res = await fetch(`/api/qr/${encodeURIComponent(id)}/scans?${qs}`);
-      if (res.ok) {
-        const page = await res.json();
-        setScans((s) => ({ items: [...s.items, ...page.items], nextCursor: page.nextCursor }));
-      }
-    } finally {
-      setLoadingMore(false);
-    }
-  };
 
   return (
     <main className="page">
@@ -164,40 +147,7 @@ function QrDetail() {
               )}
             </div>
 
-            <h2 style={{ fontSize: "1.2rem", fontFamily: "var(--font-body)", margin: "36px 0 14px" }}>Scan history</h2>
-            <div className="panel" style={{ padding: 0 }}>
-              {scans.items.length === 0 ? (
-                <p style={{ padding: 24, margin: 0, color: "var(--text-faint)" }}>No scans to show.</p>
-              ) : (
-                <div style={{ overflowX: "auto" }}>
-                  <table>
-                    <thead>
-                      <tr><th style={{ paddingLeft: 20 }}>When</th><th>Device</th><th>System</th></tr>
-                    </thead>
-                    <tbody>
-                      {scans.items.map((s) => (
-                        <tr key={s.id}>
-                          <td style={{ paddingLeft: 20 }}>{fmtDateTime(s.scannedAt)}</td>
-                          <td>{KIND_LABELS[s.kind] || s.kind}</td>
-                          <td>{s.os}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              {scans.nextCursor && (
-                <div style={{ padding: 16, textAlign: "center" }}>
-                  <button className="btn btn-outline btn-sm" onClick={showMore} disabled={loadingMore}>
-                    {loadingMore ? "Loading…" : "Show more"}
-                  </button>
-                </div>
-              )}
-            </div>
-            <p style={{ color: "var(--text-faint)", fontSize: "0.8rem", marginTop: 12 }}>
-              Devices are estimated from the browser each person used. Visitors are approximate: people on the same
-              network can count as one. We don&apos;t store anyone&apos;s IP address in readable form.
-            </p>
+            <ScanHistory id={id} days={days} bots={bots} total={data.stats.scans} allTime={data.totalAllTime} />
           </>
         )}
       </div>

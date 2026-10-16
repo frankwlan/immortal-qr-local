@@ -3,7 +3,13 @@ import { BOT_PATTERN, classifyUserAgent } from "./userAgent";
 
 export const ALLOWED_RANGES = [7, 30, 90];
 export const DEFAULT_RANGE = 30;
-export const PAGE_SIZE = 25;
+// Rows per page in the scan history table. The viewer picks one of these.
+export const PAGE_SIZES = [10, 20, 50, 100];
+export const DEFAULT_PAGE_SIZE = 20;
+// Most rows a single CSV export will contain. Far above what 90 days of
+// scans on one code normally produces, but bounded so one request can't
+// build an enormous response.
+export const MAX_EXPORT_ROWS = 50000;
 
 export function isValidTimeZone(tz) {
   if (typeof tz !== "string" || !tz || tz.length > 64) return false;
@@ -13,6 +19,15 @@ export function isValidTimeZone(tz) {
   } catch {
     return false;
   }
+}
+
+// Reads ?days=, ?tz= and ?bots= from a request, falling back to safe defaults
+// for anything missing or invalid. Shared by every endpoint that reports on
+// the chart's date range, so they always interpret it the same way.
+export function parseWindow(query) {
+  const days = ALLOWED_RANGES.includes(Number(query.days)) ? Number(query.days) : DEFAULT_RANGE;
+  const tz = isValidTimeZone(query.tz) ? query.tz : "UTC";
+  return { days, tz, includeBots: query.bots === "1" };
 }
 
 function localDate(instant, tz) {
@@ -31,6 +46,14 @@ export function dayLabels(n, tz, now = new Date()) {
   });
 }
 
+// First moment of the window, as a zone-less local timestamp string: midnight
+// at the start of the oldest day shown on the chart. The chart, the totals and
+// the scan history all use this one definition, so they can never disagree
+// about which scans are "in range".
+export function windowStart(days, tz, now = new Date()) {
+  return `${dayLabels(days, tz, now)[0]} 00:00:00`;
+}
+
 // scannedAt is stored as a UTC `timestamp` (no zone). Instants returned from
 // SQL are converted with AT TIME ZONE 'UTC' so they come back as unambiguous
 // timestamptz values instead of depending on the driver's idea of local time.
@@ -44,7 +67,7 @@ const IS_BOT = `("userAgent" IS NOT NULL AND "userAgent" ~* $4)`;
 // and counted separately so the page can say how many it hid.
 export async function loadScanStats(linkId, { days, tz, includeBots, now = new Date() }) {
   const labels = dayLabels(days, tz, now);
-  const since = `${labels[0]} 00:00:00`;
+  const since = windowStart(days, tz, now);
   // $1 link, $2 tz, $3 since (local), $4 bot pattern, $5 includeBots
   const params = [linkId, tz, since, BOT_PATTERN, includeBots];
   const base = `FROM "ScanEvent" WHERE "qrLinkId" = $1 AND ${LOCAL} >= $3::timestamp`;
@@ -104,16 +127,20 @@ export async function loadScanStats(linkId, { days, tz, includeBots, now = new D
   };
 }
 
-// One page of individual scans, newest first. The cursor is the last row's
-// (scannedAt, id) pair, which is stable even when several scans share a
-// millisecond.
-export async function loadScanPage(linkId, { includeBots, before, beforeId, limit = PAGE_SIZE }) {
+// Individual scans inside the chart's date range, newest first. Only scans
+// from the last `days` days (in the viewer's zone `tz`) are ever returned, the
+// same window the chart and totals use.
+//
+// One page: the cursor is the last row's (scannedAt, id) pair, which is stable
+// even when several scans share a millisecond. Pass no cursor for page one.
+export async function loadScanPage(linkId, { includeBots, days, tz, before, beforeId, limit = DEFAULT_PAGE_SIZE, now = new Date() }) {
   const hasCursor = Boolean(before && beforeId);
   const rows = await prisma.$queryRawUnsafe(
     `SELECT "id", ("scannedAt" AT TIME ZONE 'UTC') AS "scannedAt", "userAgent"
      FROM "ScanEvent"
      WHERE "qrLinkId" = $1
        AND (NOT ${IS_BOT.replace("$4", () => "$2")} OR $3::boolean)
+       AND (("scannedAt" AT TIME ZONE 'UTC') AT TIME ZONE $7) >= $8::timestamp
        AND ($4::timestamp IS NULL OR ("scannedAt", "id") < ($4::timestamp, $5::text))
      ORDER BY "scannedAt" DESC, "id" DESC
      LIMIT $6`,
@@ -122,7 +149,9 @@ export async function loadScanPage(linkId, { includeBots, before, beforeId, limi
     includeBots,
     hasCursor ? before : null,
     hasCursor ? beforeId : null,
-    limit + 1
+    limit + 1,
+    tz,
+    windowStart(days, tz, now)
   );
   const page = rows.slice(0, limit);
   const items = page.map((r) => ({
@@ -134,4 +163,35 @@ export async function loadScanPage(linkId, { includeBots, before, beforeId, limi
   const nextCursor =
     rows.length > limit && last ? { before: new Date(last.scannedAt).toISOString(), beforeId: last.id } : null;
   return { items, nextCursor };
+}
+
+// Every scan in the date range for a CSV export, newest first, capped at
+// MAX_EXPORT_ROWS. `truncated` says whether the cap cut the list short.
+export async function loadScansForExport(linkId, { includeBots, days, tz, now = new Date() }) {
+  const rows = await prisma.$queryRawUnsafe(
+    `SELECT ("scannedAt" AT TIME ZONE 'UTC') AS "scannedAt",
+            to_char((("scannedAt" AT TIME ZONE 'UTC') AT TIME ZONE $4), 'YYYY-MM-DD HH24:MI:SS') AS "local",
+            "userAgent"
+     FROM "ScanEvent"
+     WHERE "qrLinkId" = $1
+       AND (NOT ${IS_BOT.replace("$4", () => "$2")} OR $3::boolean)
+       AND (("scannedAt" AT TIME ZONE 'UTC') AT TIME ZONE $4) >= $5::timestamp
+     ORDER BY "scannedAt" DESC, "id" DESC
+     LIMIT $6`,
+    linkId,
+    BOT_PATTERN,
+    includeBots,
+    tz,
+    windowStart(days, tz, now),
+    MAX_EXPORT_ROWS + 1
+  );
+  const page = rows.slice(0, MAX_EXPORT_ROWS);
+  return {
+    truncated: rows.length > MAX_EXPORT_ROWS,
+    items: page.map((r) => ({
+      scannedAt: new Date(r.scannedAt).toISOString(),
+      local: r.local,
+      ...classifyUserAgent(r.userAgent),
+    })),
+  };
 }
