@@ -28,6 +28,12 @@ model User {
   sessionVersion    Int       @default(0)
   verifyTokenHash    String?   @unique
   verifyTokenExpires DateTime?
+  // A requested email change waits here until the link emailed to the NEW
+  // address is clicked; only then does `email` change. Until then sign-in and
+  // recovery keep using the old address, so a typo can't lock anyone out.
+  pendingEmail          String?
+  pendingEmailTokenHash String?   @unique
+  pendingEmailExpires   DateTime?
   // Set when the user deletes their account. The account is deactivated, not
   // erased: signing in again with the right password clears it (see
   // authOptions) for RESTORE_WINDOW_DAYS; after that the daily purge job

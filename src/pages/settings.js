@@ -54,10 +54,33 @@ function SettingsInner() {
         return;
       }
       await update();
-      alert("Saved");
+      if (result.emailError) alert(`Saved, but: ${result.emailError}`);
+      else if (result.pendingEmail && result.pendingEmail !== session?.user?.pendingEmail) {
+        alert(`Saved. We sent a confirmation link to ${result.pendingEmail}. Your email stays the same until you click it.`);
+      } else alert("Saved");
     } else {
       const data = await res.json().catch(() => ({}));
       alert(data.error || "Failed to save changes");
+    }
+  };
+
+  const [pendingBusy, setPendingBusy] = useState(false);
+  const pendingEmail = session?.user?.pendingEmail || null;
+
+  const managePending = async (action) => {
+    setPendingBusy(true);
+    const res = await fetch("/api/auth/email-change", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    setPendingBusy(false);
+    if (res.ok) {
+      await update();
+      if (action === "resend") alert(`We sent a new confirmation link to ${pendingEmail}.`);
+    } else {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || "Something went wrong. Please try again.");
     }
   };
 
@@ -116,6 +139,19 @@ function SettingsInner() {
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
             />
+            {pendingEmail && (
+              <div role="status" style={{ fontSize: "0.85rem", color: "var(--text-soft)", marginTop: 8 }}>
+                Waiting for you to confirm <strong>{pendingEmail}</strong>. We emailed it a link; your email stays{" "}
+                <strong>{session?.user?.email}</strong> until you click it.{" "}
+                <button type="button" className="btn-text" disabled={pendingBusy} onClick={() => managePending("resend")}>
+                  Resend link
+                </button>
+                {" · "}
+                <button type="button" className="btn-text" disabled={pendingBusy} onClick={() => managePending("cancel")}>
+                  Cancel change
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="field">

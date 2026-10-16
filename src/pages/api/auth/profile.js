@@ -5,7 +5,7 @@ import prisma from "../../../lib/prisma";
 import { hash, compare } from "bcryptjs";
 import isEmail from "validator/lib/isEmail";
 import { generateVerifyToken, VERIFY_TOKEN_TTL_MS } from "../../../lib/emailVerification";
-import { sendVerificationEmail, sendEmailChangedNotice } from "../../../lib/email";
+import { sendEmailChangeConfirmation } from "../../../lib/email";
 import { createLimiter } from "../../../lib/rateLimit";
 import { getBaseUrl } from "../../../lib/baseUrl";
 import { requireSameOrigin } from "../../../lib/sameOrigin";
@@ -36,7 +36,7 @@ export default async function handler(req, res) {
 
   const current = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { email: true, passwordHash: true },
+    select: { email: true, passwordHash: true, pendingEmail: true, pendingEmailExpires: true },
   });
   if (!current) return res.status(404).end();
 
@@ -72,15 +72,18 @@ export default async function handler(req, res) {
     if (!ok) return res.status(403).json({ error: "Current password is incorrect." });
   }
 
-  let pendingVerifyToken = null;
+  // An email change is only requested here, not applied: the address is
+  // parked as "pending" and the account keeps its current email until the
+  // link sent to the new address is clicked (see confirm-email-change).
+  let confirmToken = null;
   if (newEmail) {
+    const taken = await prisma.user.findUnique({ where: { email: newEmail }, select: { id: true } });
+    if (taken) return res.status(409).json({ error: "That email address is already in use." });
     const { token, tokenHash } = generateVerifyToken();
-    data.email = newEmail;
-    // A changed address is unverified until its owner clicks a fresh link.
-    data.emailVerified = null;
-    data.verifyTokenHash = tokenHash;
-    data.verifyTokenExpires = new Date(Date.now() + VERIFY_TOKEN_TTL_MS);
-    pendingVerifyToken = token;
+    data.pendingEmail = newEmail;
+    data.pendingEmailTokenHash = tokenHash;
+    data.pendingEmailExpires = new Date(Date.now() + VERIFY_TOKEN_TTL_MS);
+    confirmToken = token;
   }
   if (newPassword) {
     data.passwordHash = await hash(newPassword, 10);
@@ -94,27 +97,34 @@ export default async function handler(req, res) {
   }
 
   try {
-    const user = await prisma.user.update({ where: { id: session.user.id }, data, select: { name: true, email: true } });
+    const user = await prisma.user.update({
+      where: { id: session.user.id },
+      data,
+      select: { name: true, email: true, pendingEmail: true, pendingEmailExpires: true },
+    });
 
+    let emailError = null;
     if (newEmail) {
-      // Tell the OLD address, so a hijacked account's real owner finds out.
       try {
-        await sendEmailChangedNotice(current.email, newEmail);
+        await sendEmailChangeConfirmation(newEmail, `${getBaseUrl()}/confirm-email-change?token=${confirmToken}`);
       } catch (err) {
-        console.error("Failed to send email-change notice:", err);
+        console.error("Failed to send email-change confirmation:", err);
         Sentry.captureException(err);
-      }
-      try {
-        await sendVerificationEmail(newEmail, `${getBaseUrl()}/verify-email?token=${pendingVerifyToken}`);
-      } catch (err) {
-        console.error("Failed to send verification email:", err);
-        Sentry.captureException(err);
+        // Don't leave a pending change nobody was told about. The rest of
+        // the request (name, password) already succeeded.
+        await prisma.user.updateMany({
+          where: { id: session.user.id, pendingEmailTokenHash: data.pendingEmailTokenHash },
+          data: { pendingEmail: null, pendingEmailTokenHash: null, pendingEmailExpires: null },
+        });
+        user.pendingEmail = null;
+        emailError = `We couldn't send a confirmation email to ${newEmail}. Please try again in a moment.`;
       }
     }
 
-    res.status(200).json({ ok: true, name: user.name, email: user.email, reauth: Boolean(newPassword) });
+    const pendingEmail = user.pendingEmail && user.pendingEmailExpires > new Date() ? user.pendingEmail : null;
+    res.status(200).json({ ok: true, name: user.name, email: user.email, pendingEmail, emailError, reauth: Boolean(newPassword) });
   } catch (err) {
-    if (err.code === "P2002") return res.status(409).json({ error: "Email already in use" });
+    if (err.code === "P2002") return res.status(409).json({ error: "That email address is already in use." });
     throw err;
   }
 }
